@@ -1,8 +1,8 @@
-altair==5.5.0
-streamlit==1.35.0
-pandas==2.2.2
-numpy==1.26.4
-plotly==5.21.0
-yfinance=0.2.28
-pandas_ta==0.3.14b0
-ta==0.10.2
+altair
+streamlit
+pandas
+numpy
+plotly
+yfinance
+pandas_ta
+ta
