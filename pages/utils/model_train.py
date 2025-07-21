@@ -1,68 +1,68 @@
 import yfinance as yf
-import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.stattools import adfuller
+from sklearn.metrics import mean_squared_error, r2_score
+from statsmodels.tsa.arima.model import ARIMA
 import numpy as np
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
 from datetime import datetime, timedelta
-import warnings
-warnings.filterwarnings("ignore")
+import pandas as pd 
 
-# 1. Get stock data
 def get_data(ticker):
-    try:
-        df = yf.download(ticker, period='1y', interval='1d', progress=False)
-        if df.empty or 'Close' not in df.columns:
-            raise ValueError("No close price data available.")
-        close_price = df['Close']
-        return close_price.to_frame(name='Close')
-    except Exception as e:
-        print(f"Error downloading stock data: {e}")
-        return pd.DataFrame(columns=['Close'])
+    stock_data = yf.download(ticker, start='2024-01-01')
+    return stock_data[['Close']]
 
-# 2. Get rolling mean
-def get_rolling_mean(data, window=7):
-    return data.rolling(window=window).mean().dropna()
+def stationary_check(close_price):
+    adf_test = adfuller(close_price)
+    p_value = round(adf_test[1],3)
+    return p_value
 
-# 3. Determine differencing order
-def get_differencing_order(data):
-    return 1 if data['Close'].diff().dropna().autocorr() > 0.2 else 0
+def get_rolling_mean(close_price):
+    rolling_price = close_price.rolling(window=7).mean().dropna()
+    return rolling_price
+    
+def get_differencing_order(close_price):
+    
+    p_value = stationary_check(close_price)
+    d = 0
+    while True:
+        if p_value > 0.05:
+            d += 1
+            close_price = close_price.diff().dropna()
+            p_value = stationary_check(close_price)
+        else:
+            break
+    return d
 
-# 4. Scaling
-def scaling(data):
-    scaler = MinMaxScaler()
-    scaled = scaler.fit_transform(data)
-    scaled_df = pd.DataFrame(scaled, index=data.index, columns=['Close'])
-    return scaled_df, scaler
+def fit_model(data, differencing_order):
+    model = ARIMA(data, order=(30,differencing_order,30))
+    model_fit = model.fit()
 
-# 5. Inverse scaling
-def inverse_scaling(scaler, data):
-    return scaler.inverse_transform(data.values.reshape(-1, 1)).flatten()
+    forecast_steps = 30
+    forecast = model_fit.get_forecast(steps=forecast_steps)
 
-# 6. Evaluate SARIMAX model
-def evaluate_model(data, d):
-    try:
-        train = data[:-30]
-        test = data[-30:]
-        model = SARIMAX(train, order=(1,d,1), seasonal_order=(0,0,0,0))
-        model_fit = model.fit(disp=False)
-        preds = model_fit.predict(start=len(train), end=len(data)-1)
-        rmse = np.sqrt(mean_squared_error(test, preds))
-        return round(rmse, 4)
-    except Exception as e:
-        print(f"Model evaluation failed: {e}")
-        return np.nan
+    predictions = forecast.predicted_mean
+    return predictions
+    
+def evaluate_model(original_price, differencing_order):
+    train_data, test_data = original_price[:-30], original_price[-30:]
+    predictions = fit_model(train_data,differencing_order)
+    rmse = np.sqrt(mean_squared_error(test_data, predictions))
+    return round(rmse,2)
 
-# 7. Forecast future values
-def get_forecast(data, d):
-    try:
-        model = SARIMAX(data, order=(1,d,1), seasonal_order=(0,0,0,0))
-        model_fit = model.fit(disp=False)
-        preds = model_fit.forecast(steps=30)
-        start_date = datetime.now().strftime('%Y-%m-%d')
-        end_date = (datetime.now() + timedelta(days=29)).strftime('%Y-%m-%d')
-        forecast_index = pd.date_range(start=start_date, end=end_date, freq='D')
-        return pd.DataFrame(preds, index=forecast_index, columns=['Close'])
-    except Exception as e:
-        print(f"Forecasting failed: {e}")
-        return pd.DataFrame(columns=['Close'])
+def scaling(close_price):
+    scaler = StandardScaler()
+    scaled_data = scaler.fit_transform(np.array(close_price).reshape(-1,1))
+    return scaled_data, scaler
+
+def get_forecast(original_price, differencing_order):
+    predictions = fit_model(original_price, differencing_order)
+    start_date = datetime.now().strftime('%Y-%m-%d')
+    end_date = (datetime.now() + timedelta(days = 29)).strftime('%Y-%m-%d')
+    forecast_index = pd.date_range(start=start_date, end=end_date, freq='D')
+    forecast_df = pd.DataFrame(predictions, index = forecast_index, columns = ['Close'])
+    return forecast_df
+
+def inverse_scaling(scaler, scaled_data):
+    close_price = scaler.inverse_transform(np.array(scaled_data).reshape(-1,1))
+    return close_price
