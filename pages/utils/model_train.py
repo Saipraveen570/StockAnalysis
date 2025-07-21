@@ -1,55 +1,100 @@
 import pandas as pd
-from sklearn.metrics import mean_squared_error
+import numpy as np
+import yfinance as yf
+from datetime import datetime, timedelta
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.preprocessing import MinMaxScaler
-import numpy as np
+from sklearn.metrics import mean_squared_error
+import streamlit as st
 
-# ========== Data Preprocessing ==========
 
+# ------------------------- 1. Data Fetching -------------------------
+
+@st.cache_data
 def get_data(ticker):
-    import yfinance as yf
-    df = yf.download(ticker, period="2y")
-    df = df[['Close']].dropna()
-    df.index = pd.to_datetime(df.index)
-    return df
+    """
+    Fetch historical stock closing prices using yfinance.
+    """
+    end = datetime.today()
+    start = end - timedelta(days=730)  # 2 years of data
+    df = yf.download(ticker, start=start, end=end)
+    return df['Close'].dropna()
 
-def get_rolling_mean(df, window=5):
-    df = df.copy()
-    df['Close'] = df['Close'].rolling(window).mean()
-    return df.dropna()
 
-def get_differencing_order(df):
-    from pmdarima.arima.utils import ndiffs
-    return ndiffs(df['Close'], test='adf')
+# ------------------------- 2. Smoothing -------------------------
 
-def scaling(df):
-    scaler = MinMaxScaler()
-    scaled = scaler.fit_transform(df[['Close']])
-    df_scaled = pd.DataFrame(scaled, index=df.index, columns=['Close'])
-    return df_scaled, scaler
+def get_rolling_mean(series, window=5):
+    """
+    Smooths series with a rolling mean.
+    """
+    return series.rolling(window=window).mean().dropna()
 
-def inverse_scaling(scaler, data):
-    return scaler.inverse_transform(data.values.reshape(-1, 1)).flatten()
 
-# ========== Model Training ==========
+# ------------------------- 3. Differencing Order Estimation -------------------------
 
-def evaluate_model(df_scaled, d):
-    train = df_scaled.iloc[:-30]
-    test = df_scaled.iloc[-30:]
+def get_differencing_order(series):
+    """
+    Calculates optimal differencing order (d) using ADF test.
+    """
+    from statsmodels.tsa.stattools import adfuller
+    d = 0
+    pvalue = adfuller(series)[1]
+    while pvalue > 0.05 and d < 2:
+        series = series.diff().dropna()
+        pvalue = adfuller(series)[1]
+        d += 1
+    return d
 
-    model = SARIMAX(train['Close'], order=(1, d, 1), enforce_stationarity=False, enforce_invertibility=False)
+
+# ------------------------- 4. Scaling -------------------------
+
+def scaling(series):
+    """
+    Scales data using MinMaxScaler.
+    """
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled = scaler.fit_transform(np.array(series).reshape(-1, 1))
+    return pd.Series(scaled.flatten(), index=series.index), scaler
+
+
+def inverse_scaling(scaler, series):
+    """
+    Inverts MinMaxScaler transformation.
+    """
+    inv = scaler.inverse_transform(np.array(series).reshape(-1, 1))
+    return pd.Series(inv.flatten(), index=series.index)
+
+
+# ------------------------- 5. Model Evaluation -------------------------
+
+def evaluate_model(series, d):
+    """
+    Trains SARIMAX model and returns RMSE on last 30-day prediction.
+    """
+    train = series[:-30]
+    test = series[-30:]
+    
+    model = SARIMAX(train, order=(1, d, 1), enforce_stationarity=False, enforce_invertibility=False)
     results = model.fit(disp=False)
-
-    forecast = results.forecast(steps=len(test))
-    rmse = mean_squared_error(test['Close'], forecast, squared=False)
-    return round(rmse, 4)
-
-def get_forecast(df_scaled, d):
-    model = SARIMAX(df_scaled['Close'], order=(1, d, 1), enforce_stationarity=False, enforce_invertibility=False)
-    results = model.fit(disp=False)
-
     forecast = results.forecast(steps=30)
-    forecast_dates = pd.date_range(start=df_scaled.index[-1] + pd.Timedelta(days=1), periods=30)
-    forecast_df = pd.DataFrame(forecast, columns=['Close'])
-    forecast_df.index = forecast_dates
+
+    rmse = np.sqrt(mean_squared_error(test, forecast))
+    return rmse
+
+
+# ------------------------- 6. Forecasting -------------------------
+
+@st.cache_data
+def get_forecast(series, d):
+    """
+    Trains SARIMAX and forecasts next 30 days.
+    """
+    series = series[-365:]  # Use only last 1 year for faster training
+    model = SARIMAX(series, order=(1, d, 1), enforce_stationarity=False, enforce_invertibility=False)
+    results = model.fit(disp=False)
+    preds = results.forecast(steps=30)
+
+    future_dates = pd.date_range(start=datetime.today(), periods=30, freq='D')
+    forecast_df = pd.DataFrame(preds, index=future_dates, columns=['Close'])
+
     return forecast_df
