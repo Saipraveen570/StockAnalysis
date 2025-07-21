@@ -5,5 +5,5 @@ plotly
 matplotlib
 statsmodels
 scipy
-numpy
+numpy==1.24.4
 pandas_ta
