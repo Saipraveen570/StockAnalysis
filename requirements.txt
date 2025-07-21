@@ -7,3 +7,4 @@ statsmodels
 scipy
 numpy==1.24.4
 pandas_ta
+scikit-learn
