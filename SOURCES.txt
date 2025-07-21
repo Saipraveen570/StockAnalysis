@@ -1,2 +1,7 @@
+setup.py
+pages/Stock_Analysis.py
+pages/Stock_Prediction.py
+pages/__init__.py
 pages/utils/__init__.py
+pages/utils/model_train.py
 pages/utils/plotly_figure.py
