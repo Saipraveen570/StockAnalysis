@@ -6,3 +6,4 @@ matplotlib
 plotly
 scikit-learn
 ta
+pandas_ta
