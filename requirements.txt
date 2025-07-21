@@ -1,8 +1,9 @@
 streamlit
 pandas
+yfinance
 plotly
 matplotlib
-yfinance
 statsmodels
+scipy
+numpy
 pandas_ta
-
