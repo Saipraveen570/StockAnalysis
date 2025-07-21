@@ -1,100 +1,64 @@
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime, timedelta
-from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.preprocessing import MinMaxScaler
+from statsmodels.tsa.stattools import adfuller
 from sklearn.metrics import mean_squared_error
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 import streamlit as st
+import warnings
+warnings.filterwarnings("ignore")
 
 
-# ------------------------- 1. Data Fetching -------------------------
-
-@st.cache_data
+# ------------------- 1. GET DATA -------------------
+@st.cache_data(ttl=3600)
 def get_data(ticker):
-    """
-    Fetch historical stock closing prices using yfinance.
-    """
-    end = datetime.today()
-    start = end - timedelta(days=730)  # 2 years of data
-    df = yf.download(ticker, start=start, end=end)
-    return df['Close'].dropna()
+    try:
+        df = yf.download(ticker, period="2y")
+        return df['Close'].dropna().to_frame(name='Close')
+    except Exception as e:
+        st.error(f"Error downloading stock data: {e}")
+        return None
 
 
-# ------------------------- 2. Smoothing -------------------------
-
-def get_rolling_mean(series, window=5):
-    """
-    Smooths series with a rolling mean.
-    """
-    return series.rolling(window=window).mean().dropna()
+# ------------------- 2. SMOOTHING -------------------
+def get_rolling_mean(df, window=3):
+    return df.rolling(window=window).mean().dropna()
 
 
-# ------------------------- 3. Differencing Order Estimation -------------------------
-
-def get_differencing_order(series):
-    """
-    Calculates optimal differencing order (d) using ADF test.
-    """
-    from statsmodels.tsa.stattools import adfuller
-    d = 0
-    pvalue = adfuller(series)[1]
-    while pvalue > 0.05 and d < 2:
-        series = series.diff().dropna()
-        pvalue = adfuller(series)[1]
-        d += 1
-    return d
+# ------------------- 3. STATIONARITY -------------------
+def get_differencing_order(df):
+    for d in range(3):  # test for 0, 1, 2
+        try:
+            result = adfuller(df.diff(d).dropna())
+            if result[1] < 0.05:
+                return d
+        except:
+            continue
+    return 1  # fallback
 
 
-# ------------------------- 4. Scaling -------------------------
-
-def scaling(series):
-    """
-    Scales data using MinMaxScaler.
-    """
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaled = scaler.fit_transform(np.array(series).reshape(-1, 1))
-    return pd.Series(scaled.flatten(), index=series.index), scaler
+# ------------------- 4. SCALING -------------------
+@st.cache_resource
+def scaling(df):
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(df)
+    return pd.Series(scaled.flatten(), index=df.index), scaler
 
 
-def inverse_scaling(scaler, series):
-    """
-    Inverts MinMaxScaler transformation.
-    """
-    inv = scaler.inverse_transform(np.array(series).reshape(-1, 1))
-    return pd.Series(inv.flatten(), index=series.index)
+def inverse_scaling(scaler, data):
+    return scaler.inverse_transform(data.values.reshape(-1, 1)).flatten()
 
 
-# ------------------------- 5. Model Evaluation -------------------------
-
-def evaluate_model(series, d):
-    """
-    Trains SARIMAX model and returns RMSE on last 30-day prediction.
-    """
-    train = series[:-30]
-    test = series[-30:]
-    
-    model = SARIMAX(train, order=(1, d, 1), enforce_stationarity=False, enforce_invertibility=False)
-    results = model.fit(disp=False)
-    forecast = results.forecast(steps=30)
-
-    rmse = np.sqrt(mean_squared_error(test, forecast))
-    return rmse
-
-
-# ------------------------- 6. Forecasting -------------------------
-
+# ------------------- 5. EVALUATE MODEL -------------------
 @st.cache_data
-def get_forecast(series, d):
-    """
-    Trains SARIMAX and forecasts next 30 days.
-    """
-    series = series[-365:]  # Use only last 1 year for faster training
-    model = SARIMAX(series, order=(1, d, 1), enforce_stationarity=False, enforce_invertibility=False)
-    results = model.fit(disp=False)
-    preds = results.forecast(steps=30)
-
-    future_dates = pd.date_range(start=datetime.today(), periods=30, freq='D')
-    forecast_df = pd.DataFrame(preds, index=future_dates, columns=['Close'])
-
-    return forecast_df
+def evaluate_model(series, d):
+    try:
+        model = SARIMAX(series, order=(1, d, 1), enforce_stationarity=False, enforce_invertibility=False)
+        result = model.fit(disp=False)
+        pred = result.predict(start=0, end=len(series) - 1)
+        rmse = np.sqrt(mean_squared_error(series, pred))
+        return rmse
+    except Exception as e:
+        st.error(f"Model evaluation failed: {e}")
+        return np.nan
