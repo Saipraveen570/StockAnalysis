@@ -1,46 +1,69 @@
 import streamlit as st
-from pages.utils.model_train import get_data, get_rolling_mean, get_differencing_order, scaling, evaluate_model, get_forecast, inverse_scaling
 import pandas as pd
+from pages.utils.model_train import (
+    get_data, get_rolling_mean, get_differencing_order,
+    scaling, evaluate_model, get_forecast, inverse_scaling
+)
 from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
+
 st.set_page_config(
+    page_title="Stock Prediction",
+    page_icon="📉",
+    layout="wide",
+)
 
-        page_title="Stock Prediction",
-        page_icon="chart_with_downwards_trend",
-        layout="wide",
-    )
+st.title("📈 Stock Prediction")
 
-
-st.title("Stock Prediction")
-
-col1, col2, col3 = st.columns(3)
-
+col1, _, _ = st.columns(3)
 with col1:
-    ticker = st.text_input('Stock Ticker', 'AAPL')
+    ticker = st.text_input('Enter Stock Ticker Symbol', 'AAPL')
 
-rmse = 0
+# Define cached functions for performance
+@st.cache_data(ttl=3600)
+def fetch_stock_data(ticker):
+    return get_data(ticker)
 
-st.subheader('Predicting Next 30 days Close Price for: '+ticker)
+@st.cache_data(ttl=3600)
+def prepare_data(close_price):
+    rolling = get_rolling_mean(close_price)
+    order = get_differencing_order(rolling)
+    scaled, scaler = scaling(rolling)
+    return rolling, order, scaled, scaler
 
-close_price = get_data(ticker)
-rolling_price = get_rolling_mean(close_price)
+@st.cache_data(ttl=3600)
+def run_prediction_model(scaled, order):
+    rmse = evaluate_model(scaled, order)
+    forecast = get_forecast(scaled, order)
+    return rmse, forecast
 
-differencing_order = get_differencing_order(rolling_price)
-scaled_data, scaler = scaling(rolling_price)
-rmse = evaluate_model(scaled_data, differencing_order)
+if st.button("🔍 Run Forecast"):
+    with st.spinner("Running prediction model..."):
 
-st.write("**Model RMSE Score:**",rmse)
+        # Step 1: Data
+        close_price = fetch_stock_data(ticker)
+        rolling_price, diff_order, scaled_data, scaler = prepare_data(close_price)
 
-forecast = get_forecast(scaled_data, differencing_order)
+        # Step 2: Model
+        rmse, forecast = run_prediction_model(scaled_data, diff_order)
 
+        # Step 3: Inverse scaling forecast
+        forecast['Close'] = inverse_scaling(scaler, forecast['Close'])
 
-forecast['Close'] = inverse_scaling( scaler, forecast['Close'])
-st.write('##### Forecast Data (Next 30 days)')
-fig_tail = plotly_table(forecast.sort_index(ascending = True).round(3))
-fig_tail.update_layout(height = 220)
-st.plotly_chart(fig_tail, use_container_width=True)
+        # Display RMSE
+        st.markdown(f"### 📊 Model RMSE Score: `{rmse:.3f}`")
 
+        # Display Forecast Table
+        st.markdown("#### 📅 30-Day Forecast Table")
+        forecast_sorted = forecast.sort_index(ascending=True).round(3)
+        fig_table = plotly_table(forecast_sorted.tail(30))
+        fig_table.update_layout(height=220)
+        st.plotly_chart(fig_table, use_container_width=True)
 
-forecast = pd.concat([rolling_price, forecast])
+        # Merge with historical for charting
+        forecast_full = pd.concat([rolling_price, forecast])
 
+        # Plot Moving Average Forecast
+        st.markdown("#### 🔮 Forecast Chart")
+        st.plotly_chart(Moving_average_forecast(forecast_full.iloc[150:]), use_container_width=True)
 
-st.plotly_chart(Moving_average_forecast(forecast.iloc[150:]), use_container_width=True)
+    st.success("Prediction Complete ✅")
