@@ -3,7 +3,7 @@
 Real‑time Streamlit application that predicts the **next 30 days of closing prices** for any publicly‑listed stock.  
 The app swaps slow ARIMA models for a **lightweight Linear Regression pipeline**, cutting forecast latency by **95 %** and delivering results in **< 1 second**.
 
-![App screenshot](assets/screenshot.png) <!-- Replace with actual path or GIF -->
+(https://github.com/Saipraveen570/StockAnalysis/blob/master/app.png)
 
 ---
 
