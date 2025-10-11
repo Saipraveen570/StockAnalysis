@@ -1,9 +1,24 @@
+# Core Streamlit app
 streamlit==1.50.0
+
+# Data handling
 pandas==2.3.3
+numpy==1.25.2
+
+# Financial data
 yfinance==0.2.66
+pandas_ta==0.4.71b0
+
+# Visualization
 plotly==6.3.1
 matplotlib==3.10.7
+
+# Statistics / ML
 statsmodels==0.14.5
 scipy==1.16.2
-numpy==1.25.2
-pandas_ta==0.4.71b0
+
+# Utilities for Streamlit
+rich==14.2.0
+markdown-it-py==4.0.0
+mdurl==0.1.2
+pygments==2.19.2
