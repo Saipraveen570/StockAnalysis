@@ -33,7 +33,7 @@ def get_data(ticker):
 def get_rolling_mean(close_price):
     return close_price.rolling(window=7).mean().dropna()
 
-# --- Step 2: Smarter Linear Regression Forecast ---
+# --- Step 2: Linear Regression + Realistic Forecast ---
 def get_forecast_linear(data):
     data = data.reset_index()
     data['day'] = np.arange(len(data))
@@ -41,29 +41,28 @@ def get_forecast_linear(data):
     X = data[['day']]
     y = data['Close']
 
-    # 1️⃣ Fit trend
+    # Fit model
     model = LinearRegression()
     model.fit(X, y)
 
-    # 2️⃣ Predict linear trend for next 30 days
+    # Predict trend for next 30 days
     future_days = np.arange(len(data), len(data) + 30).reshape(-1, 1)
-    trend_pred = model.predict(future_days).ravel()  # ensure 1D shape
+    trend_pred = model.predict(future_days).ravel()  # flatten ensures shape compatibility
 
-    # 3️⃣ Capture recent 7-day volatility pattern
+    # Add realistic volatility (small random variation)
     recent_diff = data['Close'].diff().dropna()
     avg_change = recent_diff.tail(7).mean()
     std_change = recent_diff.tail(7).std()
 
-    # 4️⃣ Add realistic noise to avoid straight uptrend
     np.random.seed(42)
     random_fluctuations = np.random.normal(avg_change, std_change, size=30)
     final_pred = trend_pred + np.cumsum(random_fluctuations)
 
-    # 5️⃣ Build forecast DataFrame safely
+    # Fix shape issue — ensure index matches
     forecast_index = pd.date_range(start=datetime.today(), periods=30)
     forecast_df = pd.DataFrame({'Close': final_pred}, index=forecast_index)
 
-    # 6️⃣ Smooth fluctuations
+    # Smooth slightly
     forecast_df['Close'] = forecast_df['Close'].rolling(window=3, min_periods=1).mean()
     return forecast_df
 
@@ -80,8 +79,8 @@ fig_tail = plotly_table(forecast.round(2))
 fig_tail.update_layout(height=220)
 st.plotly_chart(fig_tail, use_container_width=True)
 
-# --- Combined Plot ---
+# --- Combined Plot with Animation ---
 combined = pd.concat([rolling_price, forecast])
 st.plotly_chart(Moving_average_forecast(combined.tail(150)), use_container_width=True)
 
-st.caption("⚠️ Note: Forecasts are trend-based and for educational purposes only. Not financial advice.")
+st.caption("⚠️ Note: Forecasts are for educational use only. Not financial advice.")
