@@ -1,86 +1,162 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-from sklearn.linear_model import LinearRegression
-import yfinance as yf
-from datetime import datetime, timedelta
-from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
+import pandas as pd 
+import yfinance as yf 
+import plotly.graph_objects as go 
+import datetime
+import ta 
+from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD
 
-# --- Page Config ---
+# setting page config
 st.set_page_config(
-    page_title="Stock Prediction",
-    page_icon="📉",
-    layout="wide",
-)
+        page_title="Stock Analysis",
+        page_icon="page_with_curl",
+        layout="wide",
+    )
 
-st.title("📈 Stock Prediction")
+st.title("Stock Analysis")
 
-# --- User Input ---
-col1, _, _ = st.columns(3)
+
+col1, col2, col3 = st.columns(3)
+
+today = datetime.date.today()
+
 with col1:
     ticker = st.text_input('Stock Ticker', 'AAPL')
+with col2:
+    start_date = st.date_input("Start Date", datetime.date(today.year-1, today.month, today.day))
+with col3:
+    end_date = st.date_input("End Date", datetime.date(today.year,today.month,today.day))
 
-st.subheader(f'🔮 Predicting Next 30 Days Close Price for: {ticker}')
+st.subheader(ticker)
 
-# --- Step 1: Get Data ---
-@st.cache_data(show_spinner="Fetching stock data...")
-def get_data(ticker):
-    start_date = (datetime.today() - timedelta(days=180)).strftime('%Y-%m-%d')
-    stock_data = yf.download(ticker, start=start_date)
-    return stock_data[['Close']]
+stock = yf.Ticker(ticker)
+st.write(stock.info['longBusinessSummary'])
 
-@st.cache_data(show_spinner="Computing rolling mean...")
-def get_rolling_mean(close_price):
-    return close_price.rolling(window=7).mean().dropna()
+st.write("**Sector:**",stock.info['sector'])
+st.write("**Full Time Employees:**",stock.info['fullTimeEmployees'])
+st.write("**Website:**",stock.info['website'])
 
-# --- Step 2: Linear Regression + Realistic Forecast ---
-def get_forecast_linear(data):
-    data = data.reset_index()
-    data['day'] = np.arange(len(data))
 
-    X = data[['day']]
-    y = data['Close']
+col1, col2 = st.columns(2)
+with col1:
+    df = pd.DataFrame(index = ['Market Cap','Beta',
+                            'EPS','PE Ratio'])
+    df[''] = [stock.info["marketCap"],stock.info["beta"],stock.info["trailingEps"],stock.info["trailingPE"]]
+    fig_df = plotly_table(df)
+    st.plotly_chart(fig_df, use_container_width=True)
+with col2:
+    df = pd.DataFrame(index = ['Qucik Ratio','Revenue per share','Profit Margins',
+                            'Debt to Equity','Return on Equity'])
+    df[''] = [stock.info["quickRatio"],stock.info["revenuePerShare"],stock.info["profitMargins"],stock.info["debtToEquity"],stock.info["returnOnEquity"]]
+    fig_df = plotly_table(df)
+    st.plotly_chart(fig_df, use_container_width=True)
 
-    # Fit model
-    model = LinearRegression()
-    model.fit(X, y)
+data = yf.download(ticker, start=start_date, end=end_date)
 
-    # Predict trend for next 30 days
-    future_days = np.arange(len(data), len(data) + 30).reshape(-1, 1)
-    trend_pred = model.predict(future_days).ravel()  # flatten ensures shape compatibility
+if len(data) <1:
+    st.write('##### Please write the name of valid Ticker')
+else:
+    col1, col2, col3 = st.columns(3)
+    daily_change = data['Close'].iloc[-1] - data['Close'].iloc[-2]
+    
+    col1.metric("Daily Change", str(round(data['Close'].iloc[-1],2)), str(round(daily_change,2)))
+    
+    data.index = [str(i)[:10] for i in data.index]
+    fig_tail = plotly_table(data.tail(10).sort_index(ascending = False).round(3))
+    fig_tail.update_layout(height = 220)
+    st.write('##### Historical Data (Last 10 days)')
+    st.plotly_chart(fig_tail, use_container_width=True)
+   
+    st.markdown("""<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" /> """, unsafe_allow_html=True)
 
-    # Add realistic volatility (small random variation)
-    recent_diff = data['Close'].diff().dropna()
-    avg_change = recent_diff.tail(7).mean()
-    std_change = recent_diff.tail(7).std()
+    st.markdown("""
+        <style>
+        div.stButton > button:first-child {
+            background-color: #e1efff;
+            color:black;
+        }
+        div.stButton > button:hover {
+            background-color: #0078ff;
+            color:white;
+            }
+        </style>""", unsafe_allow_html=True)
+    col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11,col12 = st.columns([1,1,1,1,1,1,1,1,1,1,1,1,])
 
-    np.random.seed(42)
-    random_fluctuations = np.random.normal(avg_change, std_change, size=30)
-    final_pred = trend_pred + np.cumsum(random_fluctuations)
+    num_period = ''
+    with col1:
+        if st.button('5D'):
+            num_period = '5d'
+    with col2:
+        if st.button('1M'):
+            num_period = '1mo'
+    with col3:
+        if st.button('6M'):
+            num_period = '6mo'
+    with col4:
+        if st.button('YTD'):
+            num_period = 'ytd'
+    with col5:
+        if st.button('1Y'):
+            num_period = '1y'
+    with col6:
+        if st.button('5Y'):
+            num_period = '5y'
+    with col7:
+        if st.button('MAX'):
+            num_period = 'max'
+    
+    col1, col2, col3 = st.columns([1,1,4])
+    with col1:
+        chart_type = st.selectbox('',('Candle','Line'))
+    with col2:
+        if chart_type == 'Candle':
 
-    # Fix shape issue — ensure index matches
-    forecast_index = pd.date_range(start=datetime.today(), periods=30)
-    forecast_df = pd.DataFrame({'Close': final_pred}, index=forecast_index)
+            indicators = st.selectbox('',('RSI','MACD'))
+        else:
+            indicators = st.selectbox('',('RSI','Moving Average','MACD'))
 
-    # Smooth slightly
-    forecast_df['Close'] = forecast_df['Close'].rolling(window=3, min_periods=1).mean()
-    return forecast_df
+    ticker_ = yf.Ticker(ticker)
+    new_df1 = ticker_.history(period = 'max')
+    data1 = ticker_.history(period = 'max')
+    if num_period == '':
 
-# --- Processing ---
-close_price = get_data(ticker)
-rolling_price = get_rolling_mean(close_price)
+        if chart_type == 'Candle' and indicators == 'RSI':
+            st.plotly_chart(candlestick(data1, '1y'), use_container_width=True)
+            st.plotly_chart(RSI(data1, '1y'), use_container_width=True)
 
-# --- Forecasting ---
-forecast = get_forecast_linear(rolling_price)
 
-# --- Display Forecast Table ---
-st.write('🗓️ **Forecast Data (Next 30 Days)**')
-fig_tail = plotly_table(forecast.round(2))
-fig_tail.update_layout(height=220)
-st.plotly_chart(fig_tail, use_container_width=True)
+        if chart_type == 'Candle' and indicators == 'MACD':
+            st.plotly_chart(candlestick(data1, '1y'), use_container_width=True)
+            st.plotly_chart(MACD(data1, '1y'), use_container_width=True)
 
-# --- Combined Plot with Animation ---
-combined = pd.concat([rolling_price, forecast])
-st.plotly_chart(Moving_average_forecast(combined.tail(150)), use_container_width=True)
+        if chart_type == 'Line' and indicators == 'RSI':
+            st.plotly_chart(close_chart(data1, '1y'), use_container_width=True)
+            st.plotly_chart(RSI(data1, '1y'), use_container_width=True)
 
-st.caption("⚠️ Note: Forecasts are for educational use only. Not financial advice.")
+        if chart_type == 'Line' and indicators == 'Moving Average':
+            st.plotly_chart(Moving_average(data1, '1y'), use_container_width=True)
+
+        if chart_type == 'Line' and indicators == 'MACD':
+            st.plotly_chart(close_chart(data1, '1y'), use_container_width=True)
+            st.plotly_chart(MACD(data1, '1y'), use_container_width=True)
+
+    else:
+
+        if chart_type == 'Candle' and indicators == 'RSI':
+            st.plotly_chart(candlestick(new_df1, num_period), use_container_width=True)
+            st.plotly_chart(RSI(new_df1, num_period), use_container_width=True)
+
+
+        if chart_type == 'Candle' and indicators == 'MACD':
+            st.plotly_chart(candlestick(new_df1, num_period), use_container_width=True)
+            st.plotly_chart(MACD(new_df1, num_period), use_container_width=True)
+
+        if chart_type == 'Line' and indicators == 'RSI':
+            st.plotly_chart(close_chart(new_df1, num_period), use_container_width=True)
+            st.plotly_chart(RSI(new_df1, num_period), use_container_width=True)
+
+        if chart_type == 'Line' and indicators == 'Moving Average':
+            st.plotly_chart(Moving_average(new_df1, num_period), use_container_width=True)
+        if chart_type == 'Line' and indicators == 'MACD':
+            st.plotly_chart(close_chart(new_df1, num_period), use_container_width=True)
+            st.plotly_chart(MACD(new_df1, num_period), use_container_width=True)
