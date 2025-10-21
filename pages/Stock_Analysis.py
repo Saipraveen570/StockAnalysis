@@ -47,7 +47,7 @@ def get_forecast_linear(data):
 
     # 2️⃣ Predict linear trend for next 30 days
     future_days = np.arange(len(data), len(data) + 30).reshape(-1, 1)
-    trend_pred = model.predict(future_days)
+    trend_pred = model.predict(future_days).ravel()  # ensure 1D shape
 
     # 3️⃣ Capture recent 7-day volatility pattern
     recent_diff = data['Close'].diff().dropna()
@@ -59,10 +59,11 @@ def get_forecast_linear(data):
     random_fluctuations = np.random.normal(avg_change, std_change, size=30)
     final_pred = trend_pred + np.cumsum(random_fluctuations)
 
+    # 5️⃣ Build forecast DataFrame safely
     forecast_index = pd.date_range(start=datetime.today(), periods=30)
-    forecast_df = pd.DataFrame(final_pred, index=forecast_index, columns=["Close"])
+    forecast_df = pd.DataFrame({'Close': final_pred}, index=forecast_index)
 
-    # 5️⃣ Smoothen small fluctuations
+    # 6️⃣ Smooth fluctuations
     forecast_df['Close'] = forecast_df['Close'].rolling(window=3, min_periods=1).mean()
     return forecast_df
 
