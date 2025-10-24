@@ -1,86 +1,170 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.linear_model import LinearRegression
 import yfinance as yf
-from datetime import datetime, timedelta
-from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
-
-# --- Page Config ---
-st.set_page_config(
-    page_title="Stock Analysis",
-    page_icon="📉",
-    layout="wide",
+import plotly.graph_objects as go
+import datetime
+import ta
+from pages.utils.plotly_figure import (
+    plotly_table,
+    close_chart,
+    candlestick,
+    RSI,
+    Moving_average,
+    MACD
 )
 
+# ---------------- Page Setup ----------------
+st.set_page_config(
+    page_title="Stock Analysis",
+    page_icon="📊",
+    layout="wide",
+)
 st.title("📈 Stock Analysis")
 
-# --- User Input ---
-col1, _, _ = st.columns(3)
+# ---------------- Input Section ----------------
+col1, col2, col3 = st.columns(3)
+today = datetime.date.today()
+
 with col1:
     ticker = st.text_input('Stock Ticker', 'AAPL')
+with col2:
+    start_date = st.date_input("Start Date", datetime.date(today.year - 1, today.month, today.day))
+with col3:
+    end_date = st.date_input("End Date", today)
 
-st.subheader(f'🔮 Predicting Next 30 Days Close Price for: {ticker}')
+st.subheader(f"{ticker} — Company Overview")
 
-# --- Step 1: Get Data ---
-@st.cache_data(show_spinner="Fetching stock data...")
-def get_data(ticker):
-    start_date = (datetime.today() - timedelta(days=180)).strftime('%Y-%m-%d')
-    stock_data = yf.download(ticker, start=start_date)
-    return stock_data[['Close']]
+# ---------------- Company Info ----------------
+try:
+    stock = yf.Ticker(ticker)
+    info = stock.info
 
-@st.cache_data(show_spinner="Computing rolling mean...")
-def get_rolling_mean(close_price):
-    return close_price.rolling(window=7).mean().dropna()
+    st.write(info.get("longBusinessSummary", "No business summary available."))
+    st.write("**Sector:**", info.get("sector", "N/A"))
+    st.write("**Full Time Employees:**", info.get("fullTimeEmployees", "N/A"))
+    st.write("**Website:**", info.get("website", "N/A"))
 
-# --- Step 2: Linear Regression + Realistic Forecast ---
-def get_forecast_linear(data):
-    data = data.reset_index()
-    data['day'] = np.arange(len(data))
+    col1, col2 = st.columns(2)
 
-    X = data[['day']]
-    y = data['Close']
+    # Financial summary 1
+    with col1:
+        df1 = pd.DataFrame(index=["Market Cap", "Beta", "EPS", "PE Ratio"])
+        df1["Value"] = [
+            info.get("marketCap", "N/A"),
+            info.get("beta", "N/A"),
+            info.get("trailingEps", "N/A"),
+            info.get("trailingPE", "N/A"),
+        ]
+        fig1 = plotly_table(df1)
+        st.plotly_chart(fig1, use_container_width=True)
 
-    # Fit model
-    model = LinearRegression()
-    model.fit(X, y)
+    # Financial summary 2
+    with col2:
+        df2 = pd.DataFrame(index=["Quick Ratio", "Revenue/Share", "Profit Margins", "Debt/Equity", "Return on Equity"])
+        df2["Value"] = [
+            info.get("quickRatio", "N/A"),
+            info.get("revenuePerShare", "N/A"),
+            info.get("profitMargins", "N/A"),
+            info.get("debtToEquity", "N/A"),
+            info.get("returnOnEquity", "N/A"),
+        ]
+        fig2 = plotly_table(df2)
+        st.plotly_chart(fig2, use_container_width=True)
 
-    # Predict trend for next 30 days
-    future_days = np.arange(len(data), len(data) + 30).reshape(-1, 1)
-    trend_pred = model.predict(future_days).ravel()  # flatten ensures shape compatibility
+except Exception as e:
+    st.warning("⚠️ Unable to fetch company details. Please check ticker symbol.")
 
-    # Add realistic volatility (small random variation)
-    recent_diff = data['Close'].diff().dropna()
-    avg_change = recent_diff.tail(7).mean()
-    std_change = recent_diff.tail(7).std()
+# ---------------- Historical Data ----------------
+data = yf.download(ticker, start=start_date, end=end_date)
 
-    np.random.seed(42)
-    random_fluctuations = np.random.normal(avg_change, std_change, size=30)
-    final_pred = trend_pred + np.cumsum(random_fluctuations)
+if data.empty:
+    st.error("❌ Invalid ticker or no data found. Please enter a valid symbol (e.g., AAPL, MSFT).")
+    st.stop()
 
-    # Fix shape issue — ensure index matches
-    forecast_index = pd.date_range(start=datetime.today(), periods=30)
-    forecast_df = pd.DataFrame({'Close': final_pred}, index=forecast_index)
+col1, col2, col3 = st.columns(3)
+daily_change = data["Close"].iloc[-1] - data["Close"].iloc[-2]
 
-    # Smooth slightly
-    forecast_df['Close'] = forecast_df['Close'].rolling(window=3, min_periods=1).mean()
-    return forecast_df
+col1.metric("Last Close", round(data["Close"].iloc[-1], 2))
+col2.metric("Daily Change", round(daily_change, 2))
+col3.metric("Volume", f"{int(data['Volume'].iloc[-1]):,}")
 
-# --- Processing ---
-close_price = get_data(ticker)
-rolling_price = get_rolling_mean(close_price)
-
-# --- Forecasting ---
-forecast = get_forecast_linear(rolling_price)
-
-# --- Display Forecast Table ---
-st.write('🗓️ **Forecast Data (Next 30 Days)**')
-fig_tail = plotly_table(forecast.round(2))
+data.index = [str(i)[:10] for i in data.index]
+fig_tail = plotly_table(data.tail(10).sort_index(ascending=False).round(3))
 fig_tail.update_layout(height=220)
+st.write("##### Historical Data (Last 10 days)")
 st.plotly_chart(fig_tail, use_container_width=True)
 
-# --- Combined Plot with Animation ---
-combined = pd.concat([rolling_price, forecast])
-st.plotly_chart(Moving_average_forecast(combined.tail(150)), use_container_width=True)
+st.markdown(
+    """<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" />""",
+    unsafe_allow_html=True,
+)
 
-st.caption("⚠️ Note: Forecasts are for educational use only. Not financial advice.")
+# ---------------- Styling ----------------
+st.markdown(
+    """
+    <style>
+    div.stButton > button:first-child {
+        background-color: #e1efff;
+        color: black;
+        font-weight: 500;
+    }
+    div.stButton > button:hover {
+        background-color: #0078ff;
+        color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ---------------- Time Period Buttons ----------------
+cols = st.columns(12)
+period_buttons = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
+period_map = {"5D": "5d", "1M": "1mo", "6M": "6mo", "YTD": "ytd", "1Y": "1y", "5Y": "5y", "MAX": "max"}
+num_period = ""
+
+for i, p in enumerate(period_buttons):
+    with cols[i]:
+        if st.button(p):
+            num_period = period_map[p]
+
+# ---------------- Chart Type & Indicators ----------------
+col1, col2, col3 = st.columns([1, 1, 4])
+with col1:
+    chart_type = st.selectbox("Chart Type", ("Candle", "Line"))
+with col2:
+    if chart_type == "Candle":
+        indicator = st.selectbox("Indicator", ("RSI", "MACD"))
+    else:
+        indicator = st.selectbox("Indicator", ("RSI", "Moving Average", "MACD"))
+
+# ---------------- Data for Charts ----------------
+ticker_data = yf.Ticker(ticker)
+hist_data = ticker_data.history(period="max")
+
+# Default display: 1 year if no button pressed
+period_to_use = num_period if num_period else "1y"
+
+# ---------------- Chart Rendering ----------------
+try:
+    if chart_type == "Candle":
+        st.plotly_chart(candlestick(hist_data, period_to_use), use_container_width=True)
+        if indicator == "RSI":
+            st.plotly_chart(RSI(hist_data, period_to_use), use_container_width=True)
+        elif indicator == "MACD":
+            st.plotly_chart(MACD(hist_data, period_to_use), use_container_width=True)
+
+    elif chart_type == "Line":
+        if indicator == "RSI":
+            st.plotly_chart(close_chart(hist_data, period_to_use), use_container_width=True)
+            st.plotly_chart(RSI(hist_data, period_to_use), use_container_width=True)
+        elif indicator == "Moving Average":
+            st.plotly_chart(Moving_average(hist_data, period_to_use), use_container_width=True)
+        elif indicator == "MACD":
+            st.plotly_chart(close_chart(hist_data, period_to_use), use_container_width=True)
+            st.plotly_chart(MACD(hist_data, period_to_use), use_container_width=True)
+
+except Exception as e:
+    st.error(f"⚠️ Error rendering charts: {e}")
+
+st.caption("📊 Note: Data and metrics provided by Yahoo Finance. For informational use only.")
