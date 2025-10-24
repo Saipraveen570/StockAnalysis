@@ -1,125 +1,241 @@
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
-import ta
 
-# -------------------- TABLE --------------------
+
+# ------------------------ 1. TABLE VIEW ------------------------
 def plotly_table(df: pd.DataFrame):
-    """Creates a simple Plotly table from a DataFrame."""
-    fig = go.Figure(
-        data=[
-            go.Table(
-                header=dict(
-                    values=list(df.columns.insert(0, df.index.name or "")),
-                    fill_color="#0078ff",
-                    align="center",
-                    font=dict(color="white", size=13),
-                ),
-                cells=dict(
-                    values=[df.index.tolist()] + [df[col].tolist() for col in df.columns],
-                    fill_color=[["#f8f9fa"]],
-                    align="center",
-                    font=dict(color="black", size=12),
-                ),
-            )
-        ]
-    )
-    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-    return fig
+    """
+    Creates a compact and responsive Plotly Table for display in Streamlit.
+    """
+    try:
+        fig = go.Figure(
+            data=[
+                go.Table(
+                    header=dict(
+                        values=["<b>Index</b>", "<b>Value</b>"],
+                        fill_color="#0078ff",
+                        font=dict(color="white", size=13),
+                        align="center",
+                        height=30,
+                    ),
+                    cells=dict(
+                        values=[df.index.astype(str), df.iloc[:, 0].astype(str)],
+                        fill_color=[["#f9f9f9", "#ffffff"] * (len(df)//2 + 1)],
+                        align="center",
+                        font=dict(size=12),
+                        height=28,
+                    ),
+                )
+            ]
+        )
+
+        fig.update_layout(
+            margin=dict(l=0, r=0, t=0, b=0),
+            height=250,
+        )
+        return fig
+
+    except Exception as e:
+        print(f"Error creating table: {e}")
+        return go.Figure()
 
 
-# -------------------- CLOSE CHART --------------------
+# ------------------------ 2. LINE CHART (CLOSE PRICE) ------------------------
 def close_chart(data: pd.DataFrame, period: str = "1y"):
-    """Simple line chart of closing prices."""
-    df = data.tail(_period_to_rows(data, period))
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name="Close", line=dict(color="#0078ff")))
-    fig.update_layout(title=f"Close Price ({period})", xaxis_title="Date", yaxis_title="Price", template="plotly_white")
-    return fig
-
-
-# -------------------- CANDLESTICK --------------------
-def candlestick(data: pd.DataFrame, period: str = "1y"):
-    """Candlestick chart of stock prices."""
-    df = data.tail(_period_to_rows(data, period))
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=df.index,
-                open=df["Open"],
-                high=df["High"],
-                low=df["Low"],
-                close=df["Close"],
-                increasing_line_color="#00b74a",
-                decreasing_line_color="#f93154",
+    """
+    Creates a simple close price line chart.
+    """
+    try:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=data.index,
+                y=data["Close"],
+                mode="lines",
+                line=dict(color="#0078ff", width=2),
+                name="Close Price",
             )
-        ]
-    )
-    fig.update_layout(title=f"Candlestick Chart ({period})", xaxis_title="Date", yaxis_title="Price", template="plotly_white")
-    return fig
+        )
+
+        fig.update_layout(
+            title=f"Close Price ({period})",
+            xaxis_title="Date",
+            yaxis_title="Price (USD)",
+            template="plotly_white",
+            hovermode="x unified",
+            height=400,
+        )
+        return fig
+
+    except Exception as e:
+        print(f"Error generating close_chart: {e}")
+        return go.Figure()
 
 
-# -------------------- RSI --------------------
-def RSI(data: pd.DataFrame, period: str = "1y"):
-    """Relative Strength Index chart."""
-    df = data.tail(_period_to_rows(data, period)).copy()
-    df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=14).rsi()
+# ------------------------ 3. MOVING AVERAGE FORECAST ------------------------
+def Moving_average_forecast(data: pd.DataFrame):
+    """
+    Displays historical and forecasted closing prices with a smooth transition.
+    """
+    try:
+        data = data.copy()
+        data["Type"] = np.where(data.index < data.index[-30], "Historical", "Forecast")
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], mode="lines", name="RSI", line=dict(color="#0078ff")))
-    fig.add_hline(y=70, line_dash="dash", line_color="red")
-    fig.add_hline(y=30, line_dash="dash", line_color="green")
+        fig = go.Figure()
 
-    fig.update_layout(title=f"RSI ({period})", yaxis_title="RSI Value", template="plotly_white")
-    return fig
+        # Historical
+        hist_data = data[data["Type"] == "Historical"]
+        fig.add_trace(
+            go.Scatter(
+                x=hist_data.index,
+                y=hist_data["Close"],
+                mode="lines",
+                name="Historical",
+                line=dict(color="#0078ff", width=2),
+            )
+        )
+
+        # Forecast
+        forecast_data = data[data["Type"] == "Forecast"]
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_data.index,
+                y=forecast_data["Close"],
+                mode="lines",
+                name="Forecast",
+                line=dict(color="#ff7f0e", dash="dot", width=3),
+            )
+        )
+
+        fig.update_layout(
+            title="📈 Historical vs Forecasted Close Price",
+            xaxis_title="Date",
+            yaxis_title="Price (USD)",
+            legend=dict(orientation="h", y=-0.2),
+            template="plotly_white",
+            hovermode="x unified",
+            height=450,
+            margin=dict(l=20, r=20, t=50, b=50),
+        )
+        return fig
+
+    except Exception as e:
+        print(f"Error generating forecast chart: {e}")
+        return go.Figure()
 
 
-# -------------------- MOVING AVERAGE --------------------
-def Moving_average(data: pd.DataFrame, period: str = "1y"):
-    """Close price with 7, 14, and 30-day moving averages."""
-    df = data.tail(_period_to_rows(data, period)).copy()
-    df["MA7"] = df["Close"].rolling(window=7).mean()
-    df["MA14"] = df["Close"].rolling(window=14).mean()
-    df["MA30"] = df["Close"].rolling(window=30).mean()
+# ------------------------ 4. RSI (Relative Strength Index) ------------------------
+def RSI(data: pd.DataFrame, period: str = "1y", window: int = 14):
+    """
+    Plots RSI indicator.
+    """
+    try:
+        delta = data["Close"].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name="Close", line=dict(color="#0078ff")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA7"], mode="lines", name="7-day MA", line=dict(color="#74b9ff")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA14"], mode="lines", name="14-day MA", line=dict(color="#00b894")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA30"], mode="lines", name="30-day MA", line=dict(color="#fdcb6e")))
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=data.index, y=rsi, mode="lines", name="RSI", line=dict(color="#0078ff")))
+        fig.add_hrect(y0=30, y1=70, fillcolor="lightgray", opacity=0.2, line_width=0)
+        fig.update_layout(
+            title=f"RSI Indicator ({period})",
+            xaxis_title="Date",
+            yaxis_title="RSI",
+            template="plotly_white",
+            height=300,
+        )
+        return fig
+    except Exception as e:
+        print(f"Error generating RSI: {e}")
+        return go.Figure()
 
-    fig.update_layout(title=f"Moving Averages ({period})", xaxis_title="Date", yaxis_title="Price", template="plotly_white")
-    return fig
 
-
-# -------------------- MACD --------------------
+# ------------------------ 5. MACD (Moving Average Convergence Divergence) ------------------------
 def MACD(data: pd.DataFrame, period: str = "1y"):
-    """MACD line, signal line, and histogram chart."""
-    df = data.tail(_period_to_rows(data, period)).copy()
-    macd_indicator = ta.trend.MACD(df["Close"])
-    df["MACD"] = macd_indicator.macd()
-    df["Signal"] = macd_indicator.macd_signal()
-    df["Histogram"] = macd_indicator.macd_diff()
+    """
+    Plots MACD line and signal line.
+    """
+    try:
+        short_ema = data["Close"].ewm(span=12, adjust=False).mean()
+        long_ema = data["Close"].ewm(span=26, adjust=False).mean()
+        macd = short_ema - long_ema
+        signal = macd.ewm(span=9, adjust=False).mean()
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], mode="lines", name="MACD", line=dict(color="#0078ff")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["Signal"], mode="lines", name="Signal", line=dict(color="#ff7675")))
-    fig.add_trace(go.Bar(x=df.index, y=df["Histogram"], name="Histogram", marker_color="#b2bec3", opacity=0.4))
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=data.index, y=macd, name="MACD", line=dict(color="#0078ff")))
+        fig.add_trace(go.Scatter(x=data.index, y=signal, name="Signal", line=dict(color="#ff7f0e", dash="dot")))
+        fig.update_layout(
+            title=f"MACD Indicator ({period})",
+            xaxis_title="Date",
+            yaxis_title="MACD",
+            template="plotly_white",
+            height=300,
+            hovermode="x unified",
+        )
+        return fig
+    except Exception as e:
+        print(f"Error generating MACD: {e}")
+        return go.Figure()
 
-    fig.update_layout(title=f"MACD ({period})", xaxis_title="Date", yaxis_title="Value", template="plotly_white")
-    return fig
+
+# ------------------------ 6. MOVING AVERAGE ------------------------
+def Moving_average(data: pd.DataFrame, period: str = "1y"):
+    """
+    Adds 7-day and 21-day moving averages to the close price chart.
+    """
+    try:
+        data["MA7"] = data["Close"].rolling(window=7).mean()
+        data["MA21"] = data["Close"].rolling(window=21).mean()
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=data.index, y=data["Close"], mode="lines", name="Close", line=dict(color="#0078ff")))
+        fig.add_trace(go.Scatter(x=data.index, y=data["MA7"], mode="lines", name="7-day MA", line=dict(dash="dot", color="#ff7f0e")))
+        fig.add_trace(go.Scatter(x=data.index, y=data["MA21"], mode="lines", name="21-day MA", line=dict(dash="dot", color="#2ca02c")))
+
+        fig.update_layout(
+            title=f"Moving Averages ({period})",
+            xaxis_title="Date",
+            yaxis_title="Price (USD)",
+            legend=dict(orientation="h", y=-0.2),
+            template="plotly_white",
+            height=400,
+        )
+        return fig
+    except Exception as e:
+        print(f"Error generating moving average: {e}")
+        return go.Figure()
 
 
-# -------------------- Helper Function --------------------
-def _period_to_rows(data: pd.DataFrame, period: str) -> int:
-    """Maps a period string (e.g. '1y', '6mo') to number of rows based on data frequency."""
-    mapping = {
-        "5d": 5,
-        "1mo": 22,
-        "6mo": 132,
-        "ytd": 180,
-        "1y": 252,
-        "5y": 1260,
-        "max": len(data),
-    }
-    return mapping.get(period, 252)
+# ------------------------ 7. CANDLESTICK ------------------------
+def candlestick(data: pd.DataFrame, period: str = "1y"):
+    """
+    Displays a Plotly Candlestick chart for stock OHLC data.
+    """
+    try:
+        fig = go.Figure(
+            data=[
+                go.Candlestick(
+                    x=data.index,
+                    open=data["Open"],
+                    high=data["High"],
+                    low=data["Low"],
+                    close=data["Close"],
+                    name="Candlestick",
+                )
+            ]
+        )
+        fig.update_layout(
+            title=f"Candlestick Chart ({period})",
+            xaxis_title="Date",
+            yaxis_title="Price (USD)",
+            template="plotly_white",
+            height=450,
+            xaxis_rangeslider_visible=False,
+        )
+        return fig
+    except Exception as e:
+        print(f"Error generating candlestick: {e}")
+        return go.Figure()
