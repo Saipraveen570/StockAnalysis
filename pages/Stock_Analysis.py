@@ -6,7 +6,7 @@ from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RS
 
 # Page config
 st.set_page_config(
-    page_title="📊 Stock Analysis",
+    page_title="Stock Analysis",
     page_icon="💹",
     layout="wide",
 )
