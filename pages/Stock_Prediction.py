@@ -1,66 +1,78 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.linear_model import LinearRegression
-import yfinance as yf
-from datetime import datetime, timedelta
+import time
+from pages.utils.model_train import (
+    get_data,
+    get_rolling_mean,
+    get_differencing_order,
+    scaling,
+    evaluate_model,
+    get_forecast,
+    inverse_scaling,
+)
 from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
 
+# ------------------------ PAGE CONFIG ------------------------
 st.set_page_config(
     page_title="Stock Prediction",
-    page_icon="📉",
+    page_icon="📈",
     layout="wide",
 )
 
-st.title("📈 Stock Prediction")
+st.title("🔮 Stock Price Prediction Dashboard")
 
-col1, _, _ = st.columns(3)
+# ------------------------ INPUT SECTION ------------------------
+col1, col2 = st.columns([2, 1])
 with col1:
-    ticker = st.text_input('Stock Ticker', 'AAPL')
+    ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, INFY):", "AAPL").upper()
+with col2:
+    if st.button("Predict"):
+        st.session_state["run_prediction"] = True
+    else:
+        st.session_state["run_prediction"] = st.session_state.get("run_prediction", False)
 
-st.subheader(f'🔮 Predicting Next 30 Days Close Price for: {ticker}')
+# ------------------------ APP START ------------------------
+if st.session_state["run_prediction"]:
+    try:
+        with st.spinner("📡 Fetching stock data..."):
+            close_price = get_data(ticker)
+            time.sleep(0.5)
 
-# --- Step 1: Get Data ---
-@st.cache_data(show_spinner="Fetching stock data...")
-def get_data(ticker):
-    start_date = (datetime.today() - timedelta(days=180)).strftime('%Y-%m-%d')
-    stock_data = yf.download(ticker, start=start_date)
-    return stock_data[['Close']]
+        st.subheader(f"🔍 Predicting Next 30 Days Close Price for: **{ticker}**")
 
-@st.cache_data(show_spinner="Computing rolling mean...")
-def get_rolling_mean(close_price):
-    return close_price.rolling(window=7).mean().dropna()
+        with st.spinner("⚙️ Preparing data..."):
+            rolling_price = get_rolling_mean(close_price)
+            differencing_order = get_differencing_order(rolling_price)
+            scaled_data, scaler = scaling(rolling_price)
+            time.sleep(0.5)
 
-# --- Step 2: Fast Linear Regression Forecast ---
-def get_forecast_linear(data):
-    data = data.reset_index()
-    data['day'] = np.arange(len(data))
+        with st.spinner("🧠 Evaluating model..."):
+            rmse = evaluate_model(scaled_data, differencing_order)
+            st.success(f"✅ Model RMSE Score: **{rmse:.3f}**")
 
-    X = data[['day']]
-    y = data['Close']
+        with st.spinner("📊 Generating forecast..."):
+            forecast = get_forecast(scaled_data, differencing_order)
+            forecast["Close"] = inverse_scaling(scaler, forecast["Close"])
 
-    model = LinearRegression()
-    model.fit(X, y)
+        # ------------------------ DISPLAY FORECAST TABLE ------------------------
+        st.write("### 📅 Forecast Data (Next 30 Days)")
+        fig_tail = plotly_table(forecast.sort_index(ascending=True).round(3))
+        fig_tail.update_layout(height=250)
+        st.plotly_chart(fig_tail, use_container_width=True)
 
-    future_days = np.arange(len(data), len(data) + 30).reshape(-1, 1)
-    predictions = model.predict(future_days)
+        # ------------------------ VISUALIZATION ------------------------
+        st.markdown("""<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" /> """,
+                    unsafe_allow_html=True)
 
-    forecast_index = pd.date_range(start=datetime.today(), periods=30)
-    return pd.DataFrame(predictions, index=forecast_index, columns=["Close"])
+        st.write("### 📈 Forecast Visualization")
+        combined_forecast = pd.concat([rolling_price, forecast])
+        st.plotly_chart(Moving_average_forecast(combined_forecast.iloc[-200:]),
+                        use_container_width=True)
 
-# --- Processing ---
-close_price = get_data(ticker)
-rolling_price = get_rolling_mean(close_price)
+        st.balloons()
 
-# --- Forecasting ---
-forecast = get_forecast_linear(rolling_price)
+    except Exception as e:
+        st.error(f"⚠️ Something went wrong: {str(e)}. Please verify the ticker symbol and try again.")
 
-# --- Display Forecast Table ---
-st.write('🗓️ **Forecast Data (Next 30 days)**')
-fig_tail = plotly_table(forecast.round(2))
-fig_tail.update_layout(height=220)
-st.plotly_chart(fig_tail, use_container_width=True)
-
-# --- Combined Plot ---
-combined = pd.concat([rolling_price, forecast])
-st.plotly_chart(Moving_average_forecast(combined.tail(150)), use_container_width=True)
+else:
+    st.info("👆 Enter a valid stock ticker above and click **Predict** to start forecasting.")
