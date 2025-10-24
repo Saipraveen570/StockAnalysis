@@ -1,170 +1,93 @@
 import streamlit as st
 import pandas as pd
-import yfinance as yf
-import plotly.graph_objects as go
-import datetime
-import ta
-from pages.utils.plotly_figure import (
-    plotly_table,
-    close_chart,
-    candlestick,
-    RSI,
-    Moving_average,
-    MACD
-)
+import time
 
-# ---------------- Page Setup ----------------
+# Import custom utilities
+from pages.utils.model_train import (
+    get_data, 
+    get_rolling_mean, 
+    get_differencing_order, 
+    scaling, 
+    evaluate_model, 
+    get_forecast, 
+    inverse_scaling
+)
+from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
+
+# -------------------- PAGE CONFIG --------------------
 st.set_page_config(
-    page_title="Stock Analysis",
-    page_icon="📊",
-    layout="wide",
+    page_title="📈 Stock Prediction",
+    page_icon=":chart_with_upwards_trend:",
+    layout="wide"
 )
-st.title("📈 Stock Analysis")
 
-# ---------------- Input Section ----------------
-col1, col2, col3 = st.columns(3)
-today = datetime.date.today()
+# -------------------- PAGE HEADER --------------------
+st.title("🔮 Stock Price Prediction Dashboard")
 
+st.markdown("""
+This app predicts the **next 30 days of stock closing prices** using a 
+Linear Regression + Moving Average model.  
+Enter a stock ticker (e.g. `AAPL`, `GOOG`, `TSLA`) and explore.
+""")
+
+col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
-    ticker = st.text_input('Stock Ticker', 'AAPL')
-with col2:
-    start_date = st.date_input("Start Date", datetime.date(today.year - 1, today.month, today.day))
-with col3:
-    end_date = st.date_input("End Date", today)
+    ticker = st.text_input("Enter Stock Ticker Symbol:", "AAPL").upper().strip()
 
-st.subheader(f"{ticker} — Company Overview")
+# -------------------- DATA FETCHING --------------------
+@st.cache_data(show_spinner=False)
+def fetch_stock_data(ticker):
+    try:
+        data = get_data(ticker)
+        return data
+    except Exception as e:
+        st.error(f"❌ Unable to fetch data for {ticker}. Please check ticker symbol.")
+        st.stop()
 
-# ---------------- Company Info ----------------
-try:
-    stock = yf.Ticker(ticker)
-    info = stock.info
+with st.spinner(f"📡 Fetching market data for **{ticker}**..."):
+    close_price = fetch_stock_data(ticker)
+    time.sleep(0.5)
 
-    st.write(info.get("longBusinessSummary", "No business summary available."))
-    st.write("**Sector:**", info.get("sector", "N/A"))
-    st.write("**Full Time Employees:**", info.get("fullTimeEmployees", "N/A"))
-    st.write("**Website:**", info.get("website", "N/A"))
+# -------------------- DATA PREPROCESSING --------------------
+with st.spinner("⚙️ Smoothing & preparing data..."):
+    rolling_price = get_rolling_mean(close_price)
+    differencing_order = get_differencing_order(rolling_price)
+    scaled_data, scaler = scaling(rolling_price)
+    time.sleep(0.5)
 
-    col1, col2 = st.columns(2)
+# -------------------- MODEL EVALUATION --------------------
+with st.spinner("🧮 Evaluating model performance..."):
+    rmse = evaluate_model(scaled_data, differencing_order)
+    st.success(f"✅ Model RMSE Score: **{rmse:.3f}**")
+    time.sleep(0.5)
 
-    # Financial summary 1
-    with col1:
-        df1 = pd.DataFrame(index=["Market Cap", "Beta", "EPS", "PE Ratio"])
-        df1["Value"] = [
-            info.get("marketCap", "N/A"),
-            info.get("beta", "N/A"),
-            info.get("trailingEps", "N/A"),
-            info.get("trailingPE", "N/A"),
-        ]
-        fig1 = plotly_table(df1)
-        st.plotly_chart(fig1, use_container_width=True)
+# -------------------- FORECASTING --------------------
+st.subheader(f"🔮 Predicting Next 30 Days Close Price for: **{ticker}**")
 
-    # Financial summary 2
-    with col2:
-        df2 = pd.DataFrame(index=["Quick Ratio", "Revenue/Share", "Profit Margins", "Debt/Equity", "Return on Equity"])
-        df2["Value"] = [
-            info.get("quickRatio", "N/A"),
-            info.get("revenuePerShare", "N/A"),
-            info.get("profitMargins", "N/A"),
-            info.get("debtToEquity", "N/A"),
-            info.get("returnOnEquity", "N/A"),
-        ]
-        fig2 = plotly_table(df2)
-        st.plotly_chart(fig2, use_container_width=True)
+with st.spinner("📊 Generating 30-day forecast..."):
+    forecast = get_forecast(scaled_data, differencing_order)
+    forecast['Close'] = inverse_scaling(scaler, forecast['Close'])
+    time.sleep(0.5)
 
-except Exception as e:
-    st.warning("⚠️ Unable to fetch company details. Please check ticker symbol.")
+# -------------------- DISPLAY FORECAST TABLE --------------------
+st.write("### 📅 Forecast Data (Next 30 Days)")
+forecast_sorted = forecast.sort_index(ascending=True).round(3)
+fig_table = plotly_table(forecast_sorted)
+fig_table.update_layout(height=250)
+st.plotly_chart(fig_table, use_container_width=True)
 
-# ---------------- Historical Data ----------------
-data = yf.download(ticker, start=start_date, end=end_date)
+# -------------------- MOVING AVERAGE VISUAL --------------------
+forecast_combined = pd.concat([rolling_price, forecast])
+st.write("### 📈 Trend Visualization (Rolling Avg + Forecast)")
 
-if data.empty:
-    st.error("❌ Invalid ticker or no data found. Please enter a valid symbol (e.g., AAPL, MSFT).")
-    st.stop()
+fig_forecast = Moving_average_forecast(forecast_combined.iloc[-150:])
+st.plotly_chart(fig_forecast, use_container_width=True)
 
-col1, col2, col3 = st.columns(3)
-daily_change = data["Close"].iloc[-1] - data["Close"].iloc[-2]
+st.info("🕒 Tip: Refresh or change the ticker to compare stock predictions instantly!")
 
-col1.metric("Last Close", round(data["Close"].iloc[-1], 2))
-col2.metric("Daily Change", round(daily_change, 2))
-col3.metric("Volume", f"{int(data['Volume'].iloc[-1]):,}")
-
-data.index = [str(i)[:10] for i in data.index]
-fig_tail = plotly_table(data.tail(10).sort_index(ascending=False).round(3))
-fig_tail.update_layout(height=220)
-st.write("##### Historical Data (Last 10 days)")
-st.plotly_chart(fig_tail, use_container_width=True)
-
-st.markdown(
-    """<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" />""",
-    unsafe_allow_html=True,
-)
-
-# ---------------- Styling ----------------
-st.markdown(
-    """
-    <style>
-    div.stButton > button:first-child {
-        background-color: #e1efff;
-        color: black;
-        font-weight: 500;
-    }
-    div.stButton > button:hover {
-        background-color: #0078ff;
-        color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ---------------- Time Period Buttons ----------------
-cols = st.columns(12)
-period_buttons = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
-period_map = {"5D": "5d", "1M": "1mo", "6M": "6mo", "YTD": "ytd", "1Y": "1y", "5Y": "5y", "MAX": "max"}
-num_period = ""
-
-for i, p in enumerate(period_buttons):
-    with cols[i]:
-        if st.button(p):
-            num_period = period_map[p]
-
-# ---------------- Chart Type & Indicators ----------------
-col1, col2, col3 = st.columns([1, 1, 4])
-with col1:
-    chart_type = st.selectbox("Chart Type", ("Candle", "Line"))
-with col2:
-    if chart_type == "Candle":
-        indicator = st.selectbox("Indicator", ("RSI", "MACD"))
-    else:
-        indicator = st.selectbox("Indicator", ("RSI", "Moving Average", "MACD"))
-
-# ---------------- Data for Charts ----------------
-ticker_data = yf.Ticker(ticker)
-hist_data = ticker_data.history(period="max")
-
-# Default display: 1 year if no button pressed
-period_to_use = num_period if num_period else "1y"
-
-# ---------------- Chart Rendering ----------------
-try:
-    if chart_type == "Candle":
-        st.plotly_chart(candlestick(hist_data, period_to_use), use_container_width=True)
-        if indicator == "RSI":
-            st.plotly_chart(RSI(hist_data, period_to_use), use_container_width=True)
-        elif indicator == "MACD":
-            st.plotly_chart(MACD(hist_data, period_to_use), use_container_width=True)
-
-    elif chart_type == "Line":
-        if indicator == "RSI":
-            st.plotly_chart(close_chart(hist_data, period_to_use), use_container_width=True)
-            st.plotly_chart(RSI(hist_data, period_to_use), use_container_width=True)
-        elif indicator == "Moving Average":
-            st.plotly_chart(Moving_average(hist_data, period_to_use), use_container_width=True)
-        elif indicator == "MACD":
-            st.plotly_chart(close_chart(hist_data, period_to_use), use_container_width=True)
-            st.plotly_chart(MACD(hist_data, period_to_use), use_container_width=True)
-
-except Exception as e:
-    st.error(f"⚠️ Error rendering charts: {e}")
-
-st.caption("📊 Note: Data and metrics provided by Yahoo Finance. For informational use only.")
+# -------------------- FOOTER --------------------
+st.markdown("""
+---
+**Built with** 🐍 Python, Streamlit, Plotly & Scikit-learn  
+**Forecasting Model:** Linear Regression + 7-day Moving Average
+""")
