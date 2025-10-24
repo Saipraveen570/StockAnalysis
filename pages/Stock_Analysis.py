@@ -11,7 +11,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("📊 Stock Analysis")
+st.title("Stock Analysis")
 
 col1, col2, col3 = st.columns(3)
 today = datetime.date.today()
