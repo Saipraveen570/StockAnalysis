@@ -8,12 +8,12 @@ from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
 
 # --- Page Config ---
 st.set_page_config(
-    page_title="Stock Prediction",
+    page_title="Stock Analysis",
     page_icon="📉",
     layout="wide",
 )
 
-st.title("📈 Stock Prediction")
+st.title("📈 Stock Analysis")
 
 # --- User Input ---
 col1, _, _ = st.columns(3)
