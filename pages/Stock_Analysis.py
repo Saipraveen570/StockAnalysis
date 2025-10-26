@@ -1,8 +1,10 @@
+# pages/Stock_Analysis.py
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD
 import datetime
+from utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD
+import ta
 
 # -------------------------------
 # Page config
@@ -62,7 +64,7 @@ except Exception:
     st.warning("⚠️ Could not load financial metrics. Try again later.")
 
 # -------------------------------
-# Historical data
+# Historical data & daily metrics
 # -------------------------------
 try:
     data = yf.download(ticker, start=start_date, end=end_date)
@@ -77,14 +79,15 @@ try:
         col1, _, _ = st.columns(3)
         col1.metric("📈 Daily Close", f"${last_close:.2f}", f"{daily_change:+.2f} ({pct_change:+.2f}%)")
 
-        data.index = pd.to_datetime(data.index)
+        data.index = [str(i)[:10] for i in data.index]
         st.write('🗂️ Historical Data (Last 10 days)')
         st.plotly_chart(plotly_table(data.tail(10).sort_index(ascending=False).round(3)), use_container_width=True)
 
         # -------------------------------
         # Moving Average Chart
         # -------------------------------
-        st.plotly_chart(Moving_average(data), use_container_width=True)
+        data['MA7'] = data['Close'].rolling(7).mean()
+        st.plotly_chart(Moving_average(data.iloc[-150:]), use_container_width=True)
 
 except Exception:
     st.warning("⚠️ Could not load historical data or chart. Try again later.")
