@@ -1,3 +1,51 @@
+from ..utils.model_train import get_data, get_rolling_mean, get_differencing_order, scaling, evaluate_model, get_forecast, inverse_scaling
+or the sys.path.append method like above.
+
+3️⃣ Verify folder structure
+Your repo should look like:
+
+Copy code
+stockanalysis/
+│
+├── pages/
+│   ├── Stock_Analysis.py
+│   └── Stock_Prediction.py
+│
+├── utils/
+│   ├── plotly_figure.py
+│   └── model_train.py
+│
+├── requirements.txt
+└── Trading_App.py
+pages and utils must be at the same level.
+
+All imports must reflect this structure.
+
+If you want, I can rewrite both Stock_Analysis.py and Stock_Prediction.py with correct relative imports, emojis, and ready-to-deploy Streamlit code so your app will run immediately on Streamlit Cloud.
+
+Do you want me to do that?
+
+
+
+
+
+
+
+You said:
+yes
+
+
+
+ChatGPT said:
+Perfect! I’ll rewrite both pages so they’re ready-to-deploy, with correct imports, emojis, and Streamlit-friendly structure.
+
+✅ 1. Stock_Analysis.py
+python
+Copy code
+# pages/Stock_Analysis.py
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import streamlit as st
 import pandas as pd
 import yfinance as yf
@@ -36,48 +84,46 @@ st.subheader(f"🏢 {ticker} Overview")
 try:
     stock = yf.Ticker(ticker)
     info = stock.info
+    st.write(info.get('longBusinessSummary', '⚠️ Summary unavailable'))
+    st.write("💼 Sector:", info.get('sector', 'N/A'))
+    st.write("👥 Full Time Employees:", info.get('fullTimeEmployees', 'N/A'))
+    st.write("🌐 Website:", info.get('website', 'N/A'))
+except Exception:
+    st.warning("⚠️ Could not load company information. Try again later.")
 
-    if not info:
-        st.warning("⚠️ Could not load company information. Try again later.")
-    else:
-        st.write(info.get('longBusinessSummary', '⚠️ Summary unavailable'))
-        st.write("💼 Sector:", info.get('sector', 'N/A'))
-        st.write("👥 Full Time Employees:", info.get('fullTimeEmployees', 'N/A'))
-        st.write("🌐 Website:", info.get('website', 'N/A'))
-
-        # -------------------------------
-        # Metrics tables
-        # -------------------------------
-        col1, col2 = st.columns(2)
-        with col1:
-            df1 = pd.DataFrame(index=['Market Cap','Beta','EPS','PE Ratio'])
-            df1['Value'] = [info.get("marketCap"), info.get("beta"), info.get("trailingEps"), info.get("trailingPE")]
-            st.plotly_chart(plotly_table(df1), use_container_width=True)
-        with col2:
-            df2 = pd.DataFrame(index=['Quick Ratio','Revenue per share','Profit Margins','Debt to Equity','Return on Equity'])
-            df2['Value'] = [info.get("quickRatio"), info.get("revenuePerShare"),
-                             info.get("profitMargins"), info.get("debtToEquity"),
-                             info.get("returnOnEquity")]
-            st.plotly_chart(plotly_table(df2), use_container_width=True)
-
-except Exception as e:
-    st.warning(f"⚠️ Could not load company information: {e}")
+# -------------------------------
+# Metrics tables
+# -------------------------------
+try:
+    col1, col2 = st.columns(2)
+    with col1:
+        df1 = pd.DataFrame(index=['Market Cap','Beta','EPS','PE Ratio'])
+        df1['Value'] = [info.get("marketCap"), info.get("beta"), info.get("trailingEps"), info.get("trailingPE")]
+        st.plotly_chart(plotly_table(df1), use_container_width=True)
+    with col2:
+        df2 = pd.DataFrame(index=['Quick Ratio','Revenue per share','Profit Margins','Debt to Equity','Return on Equity'])
+        df2['Value'] = [info.get("quickRatio"), info.get("revenuePerShare"),
+                         info.get("profitMargins"), info.get("debtToEquity"),
+                         info.get("returnOnEquity")]
+        st.plotly_chart(plotly_table(df2), use_container_width=True)
+except Exception:
+    st.warning("⚠️ Could not load financial metrics. Try again later.")
 
 # -------------------------------
 # Historical data
 # -------------------------------
 try:
-    data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-
-    if data.empty:
+    data = yf.download(ticker, start=start_date, end=end_date)
+    if len(data) < 1:
         st.warning('❌ Please enter a valid stock ticker')
     else:
         last_close = data['Close'].iloc[-1]
         prev_close = data['Close'].iloc[-2] if len(data) > 1 else None
-        daily_change = last_close - prev_close if prev_close else 0
-        pct_change = (daily_change / prev_close * 100) if prev_close else 0
+        daily_change = last_close - prev_close if prev_close is not None else 0
+        pct_change = (daily_change / prev_close * 100) if prev_close not in [0, None] else 0
 
-        st.metric("📈 Daily Close", f"${last_close:.2f}", f"{daily_change:+.2f} ({pct_change:+.2f}%)")
+        col1, _, _ = st.columns(3)
+        col1.metric("📈 Daily Close", f"${last_close:.2f}", f"{daily_change:+.2f} ({pct_change:+.2f}%)")
 
         data.index = [str(i)[:10] for i in data.index]
         st.write('🗂️ Historical Data (Last 10 days)')
@@ -89,5 +135,5 @@ try:
         data['MA7'] = data['Close'].rolling(7).mean()
         st.plotly_chart(Moving_average_forecast(data.iloc[-150:]), use_container_width=True)
 
-except Exception as e:
-    st.warning(f"⚠️ Could not load historical data or chart: {e}")
+except Exception:
+    st.warning("⚠️ Could not load historical data or chart. Try again later.")
