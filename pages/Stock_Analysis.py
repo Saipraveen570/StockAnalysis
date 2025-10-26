@@ -1,32 +1,45 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-from datetime import date, timedelta
-from sklearn.linear_model import LinearRegression
+import yfinance as yf
+import datetime
+from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD
 
 # --------------------------------------------------
-# Streamlit Page Setup
+# 🎨 Page Setup
 # --------------------------------------------------
-st.set_page_config(page_title="📊 Stock Analysis & Forecast", page_icon="📈", layout="wide")
-
-st.title("📊 Stock Analysis & Forecasting Dashboard")
-st.markdown("Get real-time data, RSI insights, and 30-day forecasts powered by Linear Regression 💹")
+st.set_page_config(
+    page_title="📊 Stock Analysis Dashboard",
+    page_icon="📈",
+    layout="wide",
+)
+st.title("📈 Stock Analysis")
 
 # --------------------------------------------------
-# Cached Data Fetchers
+# 🧠 Input Section
+# --------------------------------------------------
+col1, col2, col3 = st.columns(3)
+today = datetime.date.today()
+
+with col1:
+    ticker = st.text_input("🏦 Stock Ticker", "AAPL")
+with col2:
+    start_date = st.date_input("📅 Start Date", datetime.date(today.year - 1, today.month, today.day))
+with col3:
+    end_date = st.date_input("📅 End Date", today)
+
+# --------------------------------------------------
+# 🧾 Safe Data Fetching
 # --------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_stock_data(symbol, start, end):
     try:
         data = yf.download(symbol, start=start, end=end)
         return data
-    except yf.utils.YFRateLimitError:
-        st.warning("⚠️ Yahoo Finance API rate limit reached. Please wait a few minutes before retrying.")
-        return pd.DataFrame()
-    except Exception:
-        st.error("❌ Error fetching stock data.")
+    except Exception as e:
+        if "rate limit" in str(e).lower():
+            st.warning("⚠️ Yahoo Finance API rate limit reached. Please try again later.")
+        else:
+            st.error(f"❌ Error fetching stock data: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -34,131 +47,116 @@ def get_stock_summary(symbol):
     try:
         stock = yf.Ticker(symbol)
         info = stock.get_info()
-        return info.get('longBusinessSummary', 'No summary available')
-    except yf.utils.YFRateLimitError:
-        st.warning("⚠️ Rate limit reached. Summary temporarily unavailable.")
-        return "Summary unavailable due to rate limit."
-    except Exception:
-        return "No summary available."
+        return info
+    except Exception as e:
+        if "rate limit" in str(e).lower():
+            st.warning("⚠️ Rate limit reached. Summary temporarily unavailable.")
+        else:
+            st.error(f"⚠️ Unable to fetch stock summary: {e}")
+        return {}
 
 # --------------------------------------------------
-# Sidebar Settings
+# 📊 Stock Summary
 # --------------------------------------------------
-st.sidebar.header("⚙️ Settings")
-symbol = st.sidebar.text_input("Enter Stock Symbol (e.g., AAPL, INFY.NS):", "AAPL")
-start_date = st.sidebar.date_input("Start Date", date(2023, 1, 1))
-end_date = st.sidebar.date_input("End Date", date.today())
+info = get_stock_summary(ticker)
+if info:
+    st.subheader(f"🏢 {ticker} - Company Overview")
+    st.write(info.get("longBusinessSummary", "No summary available"))
+    st.write("**🌐 Website:**", info.get("website", "N/A"))
+    st.write("**🏭 Sector:**", info.get("sector", "N/A"))
+    st.write("**👥 Full-Time Employees:**", info.get("fullTimeEmployees", "N/A"))
 
-# --------------------------------------------------
-# Fetch Stock Data
-# --------------------------------------------------
-data = get_stock_data(symbol, start_date, end_date)
+    col1, col2 = st.columns(2)
+    with col1:
+        df1 = pd.DataFrame(index=["Market Cap", "Beta", "EPS", "PE Ratio"])
+        df1[""] = [
+            info.get("marketCap", "N/A"),
+            info.get("beta", "N/A"),
+            info.get("trailingEps", "N/A"),
+            info.get("trailingPE", "N/A"),
+        ]
+        st.plotly_chart(plotly_table(df1), use_container_width=True)
 
-if data.empty:
-    st.warning("⚠️ No data available. Try another stock or date range.")
-    st.stop()
-
-# --------------------------------------------------
-# Candlestick Chart
-# --------------------------------------------------
-st.subheader(f"📈 Price Movement for {symbol}")
-fig = go.Figure(data=[go.Candlestick(
-    x=data.index,
-    open=data['Open'],
-    high=data['High'],
-    low=data['Low'],
-    close=data['Close'],
-    name="Candlestick"
-)])
-fig.update_layout(
-    xaxis_title="Date",
-    yaxis_title="Price (USD)",
-    xaxis_rangeslider_visible=False,
-    template="plotly_white",
-    height=500
-)
-st.plotly_chart(fig, use_container_width=True)
-
-# --------------------------------------------------
-# RSI Calculation
-# --------------------------------------------------
-st.subheader("📊 Relative Strength Index (RSI - 14 Day)")
-delta = data['Close'].diff()
-gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-rs = gain / loss
-data['RSI'] = 100 - (100 / (1 + rs))
-
-rsi_fig = go.Figure()
-rsi_fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], mode='lines', name='RSI', line=dict(color='orange')))
-rsi_fig.add_hline(y=70, line_dash="dot", line_color="red", annotation_text="Overbought")
-rsi_fig.add_hline(y=30, line_dash="dot", line_color="green", annotation_text="Oversold")
-rsi_fig.update_layout(xaxis_title="Date", yaxis_title="RSI", height=300, template="plotly_white")
-st.plotly_chart(rsi_fig, use_container_width=True)
+    with col2:
+        df2 = pd.DataFrame(
+            index=["Quick Ratio", "Revenue per Share", "Profit Margins", "Debt to Equity", "Return on Equity"]
+        )
+        df2[""] = [
+            info.get("quickRatio", "N/A"),
+            info.get("revenuePerShare", "N/A"),
+            info.get("profitMargins", "N/A"),
+            info.get("debtToEquity", "N/A"),
+            info.get("returnOnEquity", "N/A"),
+        ]
+        st.plotly_chart(plotly_table(df2), use_container_width=True)
+else:
+    st.warning("⚠️ Could not load company summary. Try again later.")
 
 # --------------------------------------------------
-# Company Overview
+# 📈 Stock Data and Charts
 # --------------------------------------------------
-st.subheader("🏢 Company Overview")
-summary = get_stock_summary(symbol)
-st.write(summary)
+data = get_stock_data(ticker, start_date, end_date)
+
+if len(data) < 1:
+    st.error("❌ Please enter a valid stock ticker symbol.")
+else:
+    st.markdown("---")
+
+    # Daily metrics
+    col1, col2, col3 = st.columns(3)
+    daily_change = data["Close"].iloc[-1] - data["Close"].iloc[-2]
+    pct_change = (daily_change / data["Close"].iloc[-2]) * 100
+
+    col1.metric("💰 Last Close", f"${round(data['Close'].iloc[-1], 2)}", f"{round(daily_change, 2)}")
+    col2.metric("📉 % Change", f"{round(pct_change, 2)}%")
+    col3.metric("📊 Volume", f"{data['Volume'].iloc[-1]:,}")
+
+    # Recent table
+    st.write("### 🗓️ Recent 10-Day Data")
+    data.index = [str(i)[:10] for i in data.index]
+    fig_tail = plotly_table(data.tail(10).sort_index(ascending=False).round(3))
+    fig_tail.update_layout(height=230)
+    st.plotly_chart(fig_tail, use_container_width=True)
+
+    # --------------------------------------------------
+    # 🧭 Chart Options
+    # --------------------------------------------------
+    st.markdown("---")
+    st.write("### 📊 Visualization Options")
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        chart_type = st.selectbox("📉 Chart Type", ("Candle", "Line"))
+    with col2:
+        if chart_type == "Candle":
+            indicator = st.selectbox("📈 Indicator", ("RSI", "MACD"))
+        else:
+            indicator = st.selectbox("📈 Indicator", ("RSI", "Moving Average", "MACD"))
+    with col3:
+        period = st.selectbox("⏱️ Time Period", ("5d", "1mo", "6mo", "ytd", "1y", "5y", "max"))
+
+    ticker_obj = yf.Ticker(ticker)
+    hist_data = ticker_obj.history(period=period)
+
+    if chart_type == "Candle":
+        st.plotly_chart(candlestick(hist_data, period), use_container_width=True)
+        if indicator == "RSI":
+            st.plotly_chart(RSI(hist_data, period), use_container_width=True)
+        elif indicator == "MACD":
+            st.plotly_chart(MACD(hist_data, period), use_container_width=True)
+
+    elif chart_type == "Line":
+        if indicator == "RSI":
+            st.plotly_chart(close_chart(hist_data, period), use_container_width=True)
+            st.plotly_chart(RSI(hist_data, period), use_container_width=True)
+        elif indicator == "Moving Average":
+            st.plotly_chart(Moving_average(hist_data, period), use_container_width=True)
+        elif indicator == "MACD":
+            st.plotly_chart(close_chart(hist_data, period), use_container_width=True)
+            st.plotly_chart(MACD(hist_data, period), use_container_width=True)
 
 # --------------------------------------------------
-# Forecasting Section
+# ✅ End
 # --------------------------------------------------
-st.subheader("📅 30-Day Stock Price Forecast")
-
-def forecast_linear_regression(data, days=30):
-    df = data.reset_index()
-    df['Days'] = np.arange(len(df))
-    X = df[['Days']]
-    y = df['Close']
-
-    model = LinearRegression()
-    model.fit(X, y)
-
-    # Future dates
-    future_days = np.arange(len(df), len(df) + days)
-    future_dates = pd.date_range(df['Date'].iloc[-1] + timedelta(days=1), periods=days)
-    future_preds = model.predict(future_days.reshape(-1, 1))
-
-    forecast_df = pd.DataFrame({'Date': future_dates, 'Predicted_Close': future_preds})
-    return forecast_df
-
-forecast_df = forecast_linear_regression(data)
-
-# Combine with actual
-combined = pd.concat([
-    pd.DataFrame({'Date': data.index, 'Close': data['Close'], 'Type': 'Actual'}),
-    pd.DataFrame({'Date': forecast_df['Date'], 'Close': forecast_df['Predicted_Close'], 'Type': 'Forecast'})
-])
-
-forecast_fig = go.Figure()
-forecast_fig.add_trace(go.Scatter(
-    x=combined[combined['Type'] == 'Actual']['Date'],
-    y=combined[combined['Type'] == 'Actual']['Close'],
-    mode='lines',
-    name='Actual',
-    line=dict(color='blue')
-))
-forecast_fig.add_trace(go.Scatter(
-    x=combined[combined['Type'] == 'Forecast']['Date'],
-    y=combined[combined['Type'] == 'Forecast']['Close'],
-    mode='lines',
-    name='Forecast',
-    line=dict(color='orange', dash='dot')
-))
-forecast_fig.update_layout(
-    title=f"📊 {symbol} - Next 30 Days Forecast",
-    xaxis_title="Date",
-    yaxis_title="Close Price (USD)",
-    template="plotly_white",
-    height=450
-)
-st.plotly_chart(forecast_fig, use_container_width=True)
-
-# --------------------------------------------------
-# Recent Closing Prices
-# --------------------------------------------------
-st.subheader("💰 Recent Closing Prices")
-st.dataframe(data[['Close']].tail(10).style.format("{:.2f}"))
+st.markdown("---")
+st.caption("📊 Built with ❤️ using Streamlit, Plotly & Yahoo Finance")
