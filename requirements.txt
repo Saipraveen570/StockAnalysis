@@ -1,18 +1,19 @@
-# Streamlit
+# Streamlit frontend
 streamlit==1.35.0
+plotly==5.22.0
+matplotlib==3.8.1
 
-# Data manipulation
+# Data manipulation & analysis
 pandas==2.2.0
 numpy==1.26.0
 
-# Finance data
-yfinance==0.2.28
-ta==0.11.0
-
-# Machine Learning
+# Machine learning
 scikit-learn==1.3.1
 statsmodels==0.14.5
+ta==0.11.0
 
-# Visualization
-plotly==5.22.0
-matplotlib==3.8.1
+# Finance API
+yfinance==0.2.28
+
+# Optional (better logging for Streamlit)
+rich==14.2.0
