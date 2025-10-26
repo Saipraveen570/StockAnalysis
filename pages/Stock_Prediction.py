@@ -15,12 +15,12 @@ from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
 # Page config
 # -------------------------------
 st.set_page_config(
-    page_title="📊 Stock Prediction",
+    page_title="💹 Stock Prediction",
     page_icon="💹",
     layout="wide",
 )
 
-st.title("📊 Stock Prediction")
+st.title("💹 Stock Prediction")
 
 # -------------------------------
 # User input
@@ -37,6 +37,7 @@ if ticker:
     # -------------------------------
     close_price = get_data(ticker)
     rolling_price = get_rolling_mean(close_price)
+
     differencing_order = get_differencing_order(rolling_price)
     scaled_data, scaler = scaling(rolling_price)
 
@@ -52,7 +53,7 @@ if ticker:
     forecast = get_forecast(scaled_data, differencing_order)
     forecast['Close'] = inverse_scaling(scaler, forecast['Close'])
 
-    st.write(f"🗓️ ##### Forecast Data (Next 30 Days) for {ticker}")
+    st.write("🗓️ ##### Forecast Data (Next 30 Days)")
     st.plotly_chart(
         plotly_table(forecast.sort_index().round(3)),
         use_container_width=True
@@ -63,6 +64,8 @@ if ticker:
     # -------------------------------
     combined = pd.concat([rolling_price, forecast])
     combined['MA7'] = combined['Close'].rolling(7).mean()
+
+    # Add chart title
     fig = Moving_average_forecast(combined.iloc[-150:])
-    fig.update_layout(title=f"{ticker} Close Price Forecast with 7-day MA")
+    fig.update_layout(title=f"📈 {ticker} Close Price + 7-Day Moving Average (Last 150 Days)")
     st.plotly_chart(fig, use_container_width=True)
