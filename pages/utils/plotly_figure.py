@@ -7,16 +7,21 @@ import pandas as pd
 def plotly_table(df: pd.DataFrame):
     """
     Create a simple Plotly table from a DataFrame.
-    Expects DataFrame with index and a single column named 'Value'.
+    If the DataFrame has only one column called 'Value', shows ['Metric', 'Value'];
+    Otherwise, shows all columns.
     """
+    if list(df.columns) == ['Value']:
+        headers = ['Metric', 'Value']
+        values = [df.index.tolist(), df['Value'].tolist()]
+    else:
+        headers = ['Index'] + list(df.columns)
+        # Collect values for each column as a list
+        values = [df.index.tolist()] + [df[col].tolist() for col in df.columns]
+
     fig = go.Figure(data=[go.Table(
-        header=dict(values=['Metric', 'Value'],
-                    fill_color='lightskyblue',
-                    align='left'),
-        cells=dict(values=[df.index, df['Value']],
-                   fill_color='lavender',
-                   align='left'))
-    ])
+        header=dict(values=headers, fill_color='lightskyblue', align='left'),
+        cells=dict(values=values, fill_color='lavender', align='left')
+    )])
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=10))
     return fig
 
