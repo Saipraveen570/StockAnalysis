@@ -15,12 +15,12 @@ from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
 # Page config
 # -------------------------------
 st.set_page_config(
-    page_title="📈 Stock Prediction",
+    page_title="Stock Prediction",
     page_icon="💹",
     layout="wide",
 )
 
-st.title("📈 Stock Prediction")
+st.title("Stock Prediction")
 
 # -------------------------------
 # User input
@@ -42,29 +42,41 @@ if ticker:
     scaled_data, scaler = scaling(rolling_price)
 
     # -------------------------------
-    # Compute dynamic RMSE
+    # Compute dynamic RMSE safely
     # -------------------------------
-    rmse = evaluate_model(scaled_data, differencing_order)
-    st.write(f"📊 **Model RMSE Score:** {rmse:.4f}")
+    try:
+        rmse = evaluate_model(scaled_data, differencing_order)
+    except Exception:
+        rmse = float("nan")
+    st.write(f"📊 **Model RMSE Score:** {rmse:.4f}" if not pd.isna(rmse) else "📊 **Model RMSE Score:** N/A")
 
     # -------------------------------
-    # Forecast next 30 days
+    # Forecast next 30 days safely
     # -------------------------------
-    forecast = get_forecast(scaled_data, differencing_order)
-    forecast['Close'] = inverse_scaling(scaler, forecast['Close'])
+    try:
+        forecast = get_forecast(scaled_data, differencing_order)
+        forecast['Close'] = inverse_scaling(scaler, forecast['Close'])
+    except Exception:
+        forecast = pd.DataFrame(columns=['Close'])
 
     st.write("🗓️ ##### Forecast Data (Next 30 Days)")
-    st.plotly_chart(
-        plotly_table(forecast.sort_index().round(3)),
-        use_container_width=True
-    )
+    if not forecast.empty:
+        st.plotly_chart(
+            plotly_table(forecast.sort_index().round(3)),
+            use_container_width=True
+        )
+    else:
+        st.warning("⚠️ Forecast data not available.")
 
     # -------------------------------
     # Combined chart with rolling mean
     # -------------------------------
     combined = pd.concat([rolling_price, forecast])
-    combined['MA7'] = combined['Close'].rolling(7).mean()
-    st.plotly_chart(
-        Moving_average_forecast(combined.iloc[-150:]),
-        use_container_width=True
-    )
+    if 'Close' in combined.columns:
+        combined['MA7'] = combined['Close'].rolling(7).mean()
+        st.plotly_chart(
+            Moving_average_forecast(combined.iloc[-150:]),
+            use_container_width=True
+        )
+    else:
+        st.info("📊 Combined chart cannot be displayed due to missing data.")
