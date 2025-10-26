@@ -9,15 +9,7 @@ from pages.utils.model_train import (
     get_forecast,
     inverse_scaling
 )
-from pages.utils.plotly_figure import (
-    plotly_table,
-    Moving_average_forecast,
-    close_chart,
-    candlestick,
-    RSI,
-    Moving_average,
-    MACD
-)
+from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
 
 # -------------------------------
 # Page config
@@ -74,39 +66,3 @@ if ticker:
     fig = Moving_average_forecast(combined.iloc[-150:])
     fig.update_layout(title=f"{ticker} Close Price Forecast with 7-day MA")
     st.plotly_chart(fig, use_container_width=True)
-
-    # -------------------------------
-    # Optional: Candle/Line chart with indicators
-    # -------------------------------
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        chart_type = st.selectbox('📊 Chart Type', ('Candle', 'Line'))
-    with col2:
-        if chart_type == 'Candle':
-            indicator = st.selectbox('📈 Indicator', ('RSI', 'MACD'))
-        else:
-            indicator = st.selectbox('📈 Indicator', ('RSI', 'Moving Average', 'MACD'))
-
-    # RSI window slider
-    rsi_window = st.slider("🔧 Select RSI Window (days)", 5, 50, 14)
-
-    history_df = get_data(ticker, period='max')  # fetch max history
-
-    # -------------------------------
-    # Chart rendering with title
-    # -------------------------------
-    if chart_type == 'Candle':
-        st.plotly_chart(candlestick(history_df, 'max').update_layout(title=f"{ticker} Candlestick Chart"), use_container_width=True)
-        if indicator == 'RSI':
-            st.plotly_chart(RSI(history_df, 'max', window=rsi_window).update_layout(title=f"{ticker} RSI ({rsi_window}-day)"), use_container_width=True)
-        elif indicator == 'MACD':
-            st.plotly_chart(MACD(history_df, 'max').update_layout(title=f"{ticker} MACD"), use_container_width=True)
-    else:
-        if indicator == 'RSI':
-            st.plotly_chart(close_chart(history_df, 'max').update_layout(title=f"{ticker} Close Price Chart"), use_container_width=True)
-            st.plotly_chart(RSI(history_df, 'max', window=rsi_window).update_layout(title=f"{ticker} RSI ({rsi_window}-day)"), use_container_width=True)
-        elif indicator == 'Moving Average':
-            st.plotly_chart(Moving_average(history_df, 'max').update_layout(title=f"{ticker} Close Price with MA7"), use_container_width=True)
-        elif indicator == 'MACD':
-            st.plotly_chart(close_chart(history_df, 'max').update_layout(title=f"{ticker} Close Price Chart"), use_container_width=True)
-            st.plotly_chart(MACD(history_df, 'max').update_layout(title=f"{ticker} MACD"), use_container_width=True)
