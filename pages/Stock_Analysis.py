@@ -1,6 +1,4 @@
-# pages/Stock_Analysis.py
-import sys, os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 
 import streamlit as st
 import pandas as pd
