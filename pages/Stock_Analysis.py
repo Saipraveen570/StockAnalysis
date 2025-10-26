@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
+from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD, Moving_average_forecast
 import datetime
 
 # -------------------------------
@@ -40,7 +40,7 @@ try:
     st.write("💼 Sector:", info.get('sector', 'N/A'))
     st.write("👥 Full Time Employees:", info.get('fullTimeEmployees', 'N/A'))
     st.write("🌐 Website:", info.get('website', 'N/A'))
-except Exception as e:
+except Exception:
     st.warning("⚠️ Could not load company information. Try again later.")
 
 # -------------------------------
@@ -50,23 +50,32 @@ try:
     col1, col2 = st.columns(2)
     with col1:
         df1 = pd.DataFrame(index=['Market Cap','Beta','EPS','PE Ratio'])
-        df1['Value'] = [info.get("marketCap"), info.get("beta"), info.get("trailingEps"), info.get("trailingPE")]
+        df1['Value'] = [
+            info.get("marketCap", "N/A"),
+            info.get("beta", "N/A"),
+            info.get("trailingEps", "N/A"),
+            info.get("trailingPE", "N/A")
+        ]
         st.plotly_chart(plotly_table(df1), use_container_width=True)
     with col2:
         df2 = pd.DataFrame(index=['Quick Ratio','Revenue per share','Profit Margins','Debt to Equity','Return on Equity'])
-        df2['Value'] = [info.get("quickRatio"), info.get("revenuePerShare"),
-                         info.get("profitMargins"), info.get("debtToEquity"),
-                         info.get("returnOnEquity")]
+        df2['Value'] = [
+            info.get("quickRatio", "N/A"),
+            info.get("revenuePerShare", "N/A"),
+            info.get("profitMargins", "N/A"),
+            info.get("debtToEquity", "N/A"),
+            info.get("returnOnEquity", "N/A")
+        ]
         st.plotly_chart(plotly_table(df2), use_container_width=True)
-except Exception as e:
+except Exception:
     st.warning("⚠️ Could not load financial metrics. Try again later.")
 
 # -------------------------------
-# Historical data
+# Historical data & metrics
 # -------------------------------
 try:
     data = yf.download(ticker, start=start_date, end=end_date)
-    if len(data) < 1:
+    if data.empty:
         st.warning('❌ Please enter a valid stock ticker')
     else:
         last_close = data['Close'].iloc[-1]
@@ -77,15 +86,44 @@ try:
         col1, _, _ = st.columns(3)
         col1.metric("📈 Daily Close", f"${last_close:.2f}", f"{daily_change:+.2f} ({pct_change:+.2f}%)")
 
-        data.index = [str(i)[:10] for i in data.index]
         st.write('🗂️ Historical Data (Last 10 days)')
         st.plotly_chart(plotly_table(data.tail(10).sort_index(ascending=False).round(3)), use_container_width=True)
 
         # -------------------------------
-        # Moving Average Chart
+        # Moving Average Forecast
         # -------------------------------
         data['MA7'] = data['Close'].rolling(7).mean()
         st.plotly_chart(Moving_average_forecast(data.iloc[-150:]), use_container_width=True)
 
-except Exception as e:
+except Exception:
     st.warning("⚠️ Could not load historical data or chart. Try again later.")
+
+# -------------------------------
+# Chart period and type
+# -------------------------------
+try:
+    period = st.radio("📅 Select Period", ('5d','1mo','6mo','YTD','1y','5y','max'), horizontal=True)
+    chart_type = st.selectbox("📊 Chart Type", ['Line','Candle'])
+    indicators = st.selectbox("💡 Indicators", ['RSI','MACD','Moving Average'])
+
+    if not data.empty:
+        df_chart = stock.history(period='max')
+        if period != 'max':
+            df_chart = df_chart.loc[df_chart.index >= df_chart.index[-1] - pd.Timedelta(days=365)]
+
+        if chart_type == 'Line':
+            st.plotly_chart(close_chart(df_chart, period), use_container_width=True)
+            if indicators == 'RSI':
+                st.plotly_chart(RSI(df_chart, period), use_container_width=True)
+            elif indicators == 'MACD':
+                st.plotly_chart(MACD(df_chart, period), use_container_width=True)
+            elif indicators == 'Moving Average':
+                st.plotly_chart(Moving_average(df_chart, period), use_container_width=True)
+        else:
+            st.plotly_chart(candlestick(df_chart, period), use_container_width=True)
+            if indicators == 'RSI':
+                st.plotly_chart(RSI(df_chart, period), use_container_width=True)
+            elif indicators == 'MACD':
+                st.plotly_chart(MACD(df_chart, period), use_container_width=True)
+except Exception:
+    st.warning("⚠️ Could not render charts. Try again later.")
