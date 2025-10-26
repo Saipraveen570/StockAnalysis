@@ -6,14 +6,14 @@ from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RS
 
 # --- Page config ---
 st.set_page_config(
-    page_title="📊 Stock Analysis",
+    page_title="Stock Analysis",
     page_icon="💹",
     layout="wide",
 )
 
-st.title("📊 Stock Analysis")
+st.title("Stock Analysis")
 
-# --- Columns for input ---
+# --- Inputs ---
 col1, col2, col3 = st.columns(3)
 today = datetime.date.today()
 
@@ -26,10 +26,9 @@ with col3:
 
 st.subheader(f"🏢 {ticker} Overview")
 
-# --- Company Info ---
+# --- Fetch Company Info ---
 stock = yf.Ticker(ticker)
-st.write(stock.info.get('longBusinessSummary', '⚠️ Summary temporarily unavailable.'))
-
+st.write(stock.info.get('longBusinessSummary', '⚠️ Summary temporarily unavailable'))
 st.write("💼 Sector:", stock.info.get('sector', 'N/A'))
 st.write("👥 Full Time Employees:", stock.info.get('fullTimeEmployees', 'N/A'))
 st.write("🌐 Website:", stock.info.get('website', 'N/A'))
@@ -39,50 +38,43 @@ col1, col2 = st.columns(2)
 with col1:
     df1 = pd.DataFrame(index=['Market Cap','Beta','EPS','PE Ratio'])
     df1['Value'] = [
-        stock.info.get("marketCap", 0),
-        stock.info.get("beta", 0),
-        stock.info.get("trailingEps", 0),
-        stock.info.get("trailingPE", 0)
+        stock.info.get("marketCap"),
+        stock.info.get("beta"),
+        stock.info.get("trailingEps"),
+        stock.info.get("trailingPE")
     ]
     st.plotly_chart(plotly_table(df1), use_container_width=True)
+
 with col2:
     df2 = pd.DataFrame(index=['Quick Ratio','Revenue per share','Profit Margins','Debt to Equity','Return on Equity'])
     df2['Value'] = [
-        stock.info.get("quickRatio", 0),
-        stock.info.get("revenuePerShare", 0),
-        stock.info.get("profitMargins", 0),
-        stock.info.get("debtToEquity", 0),
-        stock.info.get("returnOnEquity", 0)
+        stock.info.get("quickRatio"),
+        stock.info.get("revenuePerShare"),
+        stock.info.get("profitMargins"),
+        stock.info.get("debtToEquity"),
+        stock.info.get("returnOnEquity")
     ]
     st.plotly_chart(plotly_table(df2), use_container_width=True)
 
-# --- Historical Data ---
+# --- Historical data ---
 data = yf.download(ticker, start=start_date, end=end_date)
 if len(data) < 1:
     st.warning('❌ Please enter a valid stock ticker')
 else:
-    # Safely calculate metrics
+    # --- Safely calculate metrics ---
     if len(data) > 1:
-        last_close = data['Close'].iloc[-1]
-        prev_close = data['Close'].iloc[-2]
-
-        if pd.isna(last_close) or pd.isna(prev_close):
-            last_close = 0
-            prev_close = 0
-
+        last_close = float(data['Close'].iloc[-1])
+        prev_close = float(data['Close'].iloc[-2])
         daily_change = last_close - prev_close
         pct_change = (daily_change / prev_close * 100) if prev_close != 0 else 0
     else:
-        last_close = 0
-        daily_change = 0
-        pct_change = 0
+        last_close = daily_change = pct_change = 0.0
 
     col1, col2, col3 = st.columns(3)
     col1.metric("📈 Daily Close", f"${last_close:.2f}", f"{daily_change:+.2f}")
     col2.metric("📉 % Change", f"{pct_change:+.2f}%")
-    col3.metric("💰 Volume", f"{data['Volume'].iloc[-1]:,}" if len(data) > 0 else "0")
+    col3.metric("💰 Volume", f"{int(data['Volume'].iloc[-1]):,}")
 
-    # Historical table
     data.index = [str(i)[:10] for i in data.index]
     st.write('🗂️ Historical Data (Last 10 days)')
     st.plotly_chart(plotly_table(data.tail(10).sort_index(ascending=False).round(3)), use_container_width=True)
@@ -99,7 +91,7 @@ else:
     if num_period == '':
         num_period = '1y'
 
-    # --- Chart type & indicators ---
+    # --- Chart type & indicator selection ---
     col1, col2 = st.columns([1,1])
     with col1:
         chart_type = st.selectbox('📊 Chart Type', ('Candle','Line'))
@@ -109,12 +101,12 @@ else:
         else:
             indicators = st.selectbox('📈 Indicator', ('RSI','Moving Average','MACD'))
 
-    # RSI window slider
+    # --- RSI slider ---
     rsi_window = st.slider("🔧 Select RSI Window (days)", 5, 50, 14)
 
     df_history = yf.Ticker(ticker).history(period='max')
 
-    # --- Render charts ---
+    # --- Chart rendering ---
     if chart_type == 'Candle':
         st.plotly_chart(candlestick(df_history, num_period), use_container_width=True)
         if indicators == 'RSI':
