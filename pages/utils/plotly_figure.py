@@ -3,81 +3,87 @@ import pandas as pd
 import numpy as np
 import ta
 
-# ---------------------------
+# ----------------------------
 # Table Plot
-# ---------------------------
+# ----------------------------
 def plotly_table(df):
     fig = go.Figure(data=[go.Table(
-        header=dict(values=["Metric", "Value"],
-                    fill_color='paleturquoise',
-                    align='left'),
-        cells=dict(values=[df.index, df['Value']],
-                   fill_color='lavender',
-                   align='left'))
-    ])
-    fig.update_layout(margin=dict(t=10,b=10))
+        header=dict(values=["Metric","Value"], fill_color='lightblue', align='left'),
+        cells=dict(values=[df.index, df['Value']], fill_color='lavender', align='left')
+    )])
     return fig
 
-# ---------------------------
+# ----------------------------
 # Close Price Line Chart
-# ---------------------------
-def close_chart(df, period='1y'):
+# ----------------------------
+def close_chart(df, period):
     df_plot = df.copy()
+    if period != 'max':
+        df_plot = df_plot.last(period)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['Close'], mode='lines', name='Close'))
-    fig.update_layout(title="Close Price", xaxis_title="Date", yaxis_title="Price", margin=dict(t=40))
+    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['Close'], mode='lines', name='Close Price'))
+    fig.update_layout(title='Close Price', xaxis_title='Date', yaxis_title='Price', template='plotly_white')
     return fig
 
-# ---------------------------
+# ----------------------------
 # Candlestick Chart
-# ---------------------------
-def candlestick(df, period='1y'):
+# ----------------------------
+def candlestick(df, period):
     df_plot = df.copy()
+    if period != 'max':
+        df_plot = df_plot.last(period)
     fig = go.Figure(data=[go.Candlestick(
         x=df_plot.index,
         open=df_plot['Open'],
         high=df_plot['High'],
         low=df_plot['Low'],
         close=df_plot['Close'],
-        name='Candlestick'
+        increasing_line_color='green',
+        decreasing_line_color='red'
     )])
-    fig.update_layout(title="Candlestick Chart", xaxis_title="Date", yaxis_title="Price", margin=dict(t=40))
+    fig.update_layout(title='Candlestick Chart', xaxis_title='Date', yaxis_title='Price', template='plotly_white')
     return fig
 
-# ---------------------------
-# RSI Chart (Dynamic Window)
-# ---------------------------
-def RSI(df, period='1y', window=14):
+# ----------------------------
+# RSI Chart
+# ----------------------------
+def RSI(df, period, window=14):
     df_plot = df.copy()
+    if period != 'max':
+        df_plot = df_plot.last(period)
     df_plot['RSI'] = ta.momentum.RSIIndicator(df_plot['Close'], window=window).rsi()
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], mode='lines', name=f'RSI ({window})'))
-    fig.update_layout(title=f"RSI ({window} days)", xaxis_title="Date", yaxis_title="RSI", margin=dict(t=40))
-    fig.add_hline(y=70, line_dash="dash", line_color="red")
-    fig.add_hline(y=30, line_dash="dash", line_color="green")
+    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], mode='lines', name='RSI'))
+    fig.update_layout(title=f'RSI ({window}-day)', xaxis_title='Date', yaxis_title='RSI', template='plotly_white')
     return fig
 
-# ---------------------------
-# Moving Average Chart
-# ---------------------------
-def Moving_average(df, period='1y', window=20):
+# ----------------------------
+# Moving Average
+# ----------------------------
+def Moving_average(df, period, window=7):
     df_plot = df.copy()
-    df_plot[f'MA_{window}'] = df_plot['Close'].rolling(window=window).mean()
+    if period != 'max':
+        df_plot = df_plot.last(period)
+    df_plot['MA'] = df_plot['Close'].rolling(window=window).mean()
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['Close'], mode='lines', name='Close'))
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot[f'MA_{window}'], mode='lines', name=f'MA ({window})'))
-    fig.update_layout(title=f"Close Price with {window}-Day Moving Average", xaxis_title="Date", yaxis_title="Price", margin=dict(t=40))
+    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['Close'], mode='lines', name='Close Price'))
+    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA'], mode='lines', name=f'{window}-day MA'))
+    fig.update_layout(title='Moving Average', xaxis_title='Date', yaxis_title='Price', template='plotly_white')
     return fig
 
-# ---------------------------
-# MACD Chart
-# ---------------------------
-def MACD(df, period='1y', fast=12, slow=26, signal=9):
+# ----------------------------
+# MACD
+# ----------------------------
+def MACD(df, period, fast=12, slow=26, signal=9):
     df_plot = df.copy()
-    df_plot['MACD'] = ta.trend.MACD(df_plot['Close'], window_slow=slow, window_fast=fast, window_sign=signal).macd()
-    df_plot['Signal'] = ta.trend.MACD(df_plot['Close'], window_slow=slow, window_fast=fast, window_sign=signal).macd_signal()
+    if period != 'max':
+        df_plot = df_plot.last(period)
+    exp1 = df_plot['Close'].ewm(span=fast, adjust=False).mean()
+    exp2 = df_plot['Close'].ewm(span=slow, adjust=False).mean()
+    df_plot['MACD'] = exp1 - exp2
+    df_plot['Signal'] = df_plot['MACD'].ewm(span=signal, adjust=False).mean()
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], mode='lines', name='MACD'))
     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['Signal'], mode='lines', name='Signal'))
-    fig.update_layout(title="MACD Chart", xaxis_title="Date", yaxis_title="MACD", margin=dict(t=40))
+    fig.update_layout(title='MACD', xaxis_title='Date', yaxis_title='MACD', template='plotly_white')
     return fig
