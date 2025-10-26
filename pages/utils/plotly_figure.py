@@ -1,56 +1,87 @@
-import streamlit as st
+import plotly.graph_objects as go
 import pandas as pd
-from utils.model_train import (
-    get_data,
-    get_rolling_mean,
-    get_differencing_order,
-    scaling,
-    evaluate_model,
-    get_forecast,
-    inverse_scaling
-)
-from utils.plotly_figure import plotly_table, Moving_average_forecast
 
 # -------------------------------
-# Page config
+# Table chart
 # -------------------------------
-st.set_page_config(
-    page_title="🔮 Stock Prediction",
-    page_icon="💹",
-    layout="wide",
-)
-
-st.title("Stock Prediction")
+def plotly_table(df: pd.DataFrame):
+    fig = go.Figure(data=[go.Table(
+        header=dict(values=['Metric', 'Value'],
+                    fill_color='paleturquoise',
+                    align='left'),
+        cells=dict(values=[df.index, df['Value']],
+                   fill_color='lavender',
+                   align='left'))
+    ])
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300)
+    return fig
 
 # -------------------------------
-# User input
+# Line chart for Close prices
 # -------------------------------
-col1, _, _ = st.columns(3)
-with col1:
-    ticker = st.text_input("🔎 Stock Ticker", "AAPL")
+def close_chart(df: pd.DataFrame, title: str = "Close Price"):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='Close'))
+    fig.update_layout(title=title, xaxis_title="Date", yaxis_title="Price")
+    return fig
 
-if ticker:
-    st.subheader(f"🔮 Predicting Next 30 Days Close Price for: {ticker}")
+# -------------------------------
+# Candlestick chart
+# -------------------------------
+def candlestick(df: pd.DataFrame, title: str = "Candlestick Chart"):
+    fig = go.Figure(data=[go.Candlestick(x=df.index,
+                                         open=df['Open'],
+                                         high=df['High'],
+                                         low=df['Low'],
+                                         close=df['Close'])])
+    fig.update_layout(title=title, xaxis_title="Date", yaxis_title="Price")
+    return fig
 
-    # Fetch & process data
-    close_price = get_data(ticker)
-    rolling_price = get_rolling_mean(close_price)
+# -------------------------------
+# RSI chart
+# -------------------------------
+def RSI(df: pd.DataFrame, title: str = "RSI", window: int = 14):
+    from ta.momentum import RSIIndicator
+    rsi = RSIIndicator(df['Close'], window=window).rsi()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=rsi, mode='lines', name=f'RSI ({window})'))
+    fig.update_layout(title=title, xaxis_title="Date", yaxis_title="RSI")
+    return fig
 
-    differencing_order = get_differencing_order(rolling_price)
-    scaled_data, scaler = scaling(rolling_price)
+# -------------------------------
+# Moving Average chart
+# -------------------------------
+def Moving_average(df: pd.DataFrame, title: str = "Moving Average"):
+    ma7 = df['Close'].rolling(7).mean()
+    ma30 = df['Close'].rolling(30).mean()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='Close'))
+    fig.add_trace(go.Scatter(x=df.index, y=ma7, mode='lines', name='MA7'))
+    fig.add_trace(go.Scatter(x=df.index, y=ma30, mode='lines', name='MA30'))
+    fig.update_layout(title=title, xaxis_title="Date", yaxis_title="Price")
+    return fig
 
-    # Compute RMSE
-    rmse = evaluate_model(scaled_data, differencing_order)
-    st.write(f"📊 **Model RMSE Score:** {rmse:.4f}")
+# -------------------------------
+# MACD chart
+# -------------------------------
+def MACD(df: pd.DataFrame, title: str = "MACD"):
+    from ta.trend import MACD as MACDIndicator
+    macd_indicator = MACDIndicator(df['Close'])
+    macd = macd_indicator.macd()
+    signal = macd_indicator.macd_signal()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=macd, mode='lines', name='MACD'))
+    fig.add_trace(go.Scatter(x=df.index, y=signal, mode='lines', name='Signal'))
+    fig.update_layout(title=title, xaxis_title="Date", yaxis_title="Value")
+    return fig
 
-    # Forecast next 30 days
-    forecast = get_forecast(scaled_data, differencing_order)
-    forecast['Close'] = inverse_scaling(scaler, forecast['Close'])
-
-    st.write("🗓️ ##### Forecast Data (Next 30 Days)")
-    st.plotly_chart(plotly_table(forecast.sort_index().round(3)), use_container_width=True)
-
-    # Combined chart with rolling mean
-    combined = pd.concat([rolling_price, forecast])
-    combined['MA7'] = combined['Close'].rolling(7).mean()
-    st.plotly_chart(Moving_average_forecast(combined.iloc[-150:]), use_container_width=True)
+# -------------------------------
+# Forecast chart with Moving Average
+# -------------------------------
+def Moving_average_forecast(df: pd.DataFrame):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='Close'))
+    if 'MA7' in df.columns:
+        fig.add_trace(go.Scatter(x=df.index, y=df['MA7'], mode='lines', name='MA7'))
+    fig.update_layout(title="Close Price & MA7 Forecast", xaxis_title="Date", yaxis_title="Price")
+    return fig
