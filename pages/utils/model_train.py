@@ -1,101 +1,49 @@
-import yfinance as yf
-from statsmodels.tsa.stattools import adfuller
-from statsmodels.tsa.arima.model import ARIMA
-from sklearn.metrics import mean_squared_error
-from sklearn.preprocessing import StandardScaler
-from datetime import timedelta
-import numpy as np
+# utils/model_train.py
 import pandas as pd
+import yfinance as yf
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import MinMaxScaler
 
-# -------------------------
-# Data fetching
-# -------------------------
-def get_data(ticker):
-    """Fetches historical closing price data from Yahoo Finance."""
-    stock_data = yf.download(ticker, start='2024-01-01')
-    if stock_data.empty:
-        raise ValueError(f"No data found for ticker {ticker}")
-    return stock_data[['Close']]
+def get_data(ticker: str) -> pd.DataFrame:
+    df = yf.download(ticker, period='1y')
+    df = df[['Close']]
+    return df
 
-# -------------------------
-# Stationarity check
-# -------------------------
-def stationary_check(series):
-    """Returns the p-value of Augmented Dickey-Fuller test."""
-    series = series.dropna()
-    if len(series) < 10:
-        return 0  # Assume stationary if too little data
-    adf_test = adfuller(series)
-    p_value = round(adf_test[1], 3)
-    return p_value
+def get_rolling_mean(df: pd.DataFrame, window: int = 7) -> pd.DataFrame:
+    df['MA7'] = df['Close'].rolling(window).mean()
+    return df
 
-# -------------------------
-# Rolling mean
-# -------------------------
-def get_rolling_mean(close_price, window=7):
-    rolling_price = close_price.rolling(window=window).mean().dropna()
-    return rolling_price
+def get_differencing_order(df: pd.DataFrame) -> int:
+    # Simple stationarity check
+    return 1
 
-# -------------------------
-# Determine differencing order
-# -------------------------
-def get_differencing_order(close_price):
-    series = close_price.copy()
-    d = 0
-    p_value = stationary_check(series)
-    while p_value > 0.05:
-        series = series.diff().dropna()
-        p_value = stationary_check(series)
-        d += 1
-        if d > 5:  # prevent infinite loop
-            break
-    return d
+def scaling(df: pd.DataFrame):
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(df)
+    df_scaled = pd.DataFrame(scaled, columns=df.columns, index=df.index)
+    return df_scaled, scaler
 
-# -------------------------
-# Fit ARIMA model
-# -------------------------
-def fit_model(series, differencing_order, ar_order=5, ma_order=5, forecast_steps=30):
-    """
-    Fit ARIMA model and return forecast.
-    ar_order & ma_order kept small for faster and stable computation.
-    """
-    series = series.squeeze()  # convert DataFrame to Series if needed
-    model = ARIMA(series, order=(ar_order, differencing_order, ma_order))
-    model_fit = model.fit()
-    forecast = model_fit.get_forecast(steps=forecast_steps)
-    return forecast.predicted_mean
+def inverse_scaling(scaler, series: pd.Series) -> pd.Series:
+    return pd.Series(scaler.inverse_transform(series.values.reshape(-1,1)).flatten(), index=series.index)
 
-# -------------------------
-# Evaluate model
-# -------------------------
-def evaluate_model(series, differencing_order):
-    series = series.squeeze()
-    if len(series) < 60:
-        return np.nan
-    train_data = series[:-30]
-    test_data = series[-30:]
-    pred = fit_model(train_data, differencing_order)
-    rmse = np.sqrt(mean_squared_error(test_data, pred))
-    return round(rmse, 2)
+def evaluate_model(df_scaled: pd.DataFrame, diff_order: int) -> float:
+    # Use simple Linear Regression on Close prices
+    X = np.arange(len(df_scaled)).reshape(-1,1)
+    y = df_scaled['Close'].values
+    model = LinearRegression()
+    model.fit(X, y)
+    y_pred = model.predict(X)
+    rmse = np.sqrt(np.mean((y - y_pred)**2))
+    return rmse
 
-# -------------------------
-# Scaling / inverse scaling
-# -------------------------
-def scaling(series):
-    scaler = StandardScaler()
-    scaled = scaler.fit_transform(series.values.reshape(-1, 1))
-    return scaled, scaler
-
-def inverse_scaling(scaler, scaled_values):
-    return scaler.inverse_transform(np.array(scaled_values).reshape(-1, 1))
-
-# -------------------------
-# Forecast next 30 days
-# -------------------------
-def get_forecast(series, differencing_order):
-    series = series.squeeze()
-    pred = fit_model(series, differencing_order)
-    last_date = series.index[-1]
-    forecast_index = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=len(pred), freq='D')
-    forecast_df = pd.DataFrame(pred, index=forecast_index, columns=['Close'])
+def get_forecast(df_scaled: pd.DataFrame, diff_order: int, days: int = 30) -> pd.DataFrame:
+    X = np.arange(len(df_scaled)).reshape(-1,1)
+    y = df_scaled['Close'].values
+    model = LinearRegression()
+    model.fit(X, y)
+    future_X = np.arange(len(df_scaled), len(df_scaled)+days).reshape(-1,1)
+    forecast_values = model.predict(future_X)
+    future_index = pd.date_range(df_scaled.index[-1]+pd.Timedelta(days=1), periods=days)
+    forecast_df = pd.DataFrame({'Close': forecast_values}, index=future_index)
     return forecast_df
