@@ -1,92 +1,62 @@
-# pages/utils/model_train.py
-
+import yfinance as yf
 import pandas as pd
 import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
 from sklearn.preprocessing import MinMaxScaler
 
 # -------------------------------
-# Fetch historical stock data
+# Get historical Close price
 # -------------------------------
-def get_data(ticker):
-    """Fetches historical stock Close prices from Yahoo Finance"""
-    import yfinance as yf
-    df = yf.download(ticker, period='5y')
-    df = df[['Close']]
-    df.dropna(inplace=True)
-    return df
+def get_data(ticker: str):
+    df = yf.download(ticker, period='max')
+    return df[['Close']].copy()
 
 # -------------------------------
-# Rolling mean smoothing
+# Rolling Mean
 # -------------------------------
-def get_rolling_mean(df, window=7):
-    """Computes rolling mean to smooth the series"""
-    rolling = df.copy()
-    rolling['Close'] = rolling['Close'].rolling(window).mean()
-    rolling.dropna(inplace=True)
-    return rolling
+def get_rolling_mean(df: pd.DataFrame, window: int = 7):
+    df_rm = df.rolling(window).mean().dropna()
+    return df_rm
 
 # -------------------------------
-# Determine differencing order for ARIMA
+# Differencing order (ARIMA)
 # -------------------------------
-def get_differencing_order(df):
-    """Returns 1 if differencing is needed, 0 otherwise"""
-    # Simple heuristic: check for stationarity using Augmented Dickey-Fuller
-    from statsmodels.tsa.stattools import adfuller
-    result = adfuller(df['Close'])
-    return 0 if result[1] < 0.05 else 1
+def get_differencing_order(df: pd.DataFrame):
+    # Simple approach: 1 for non-stationary series
+    return 1
 
 # -------------------------------
-# Scaling for modeling
+# Scale data
 # -------------------------------
-def scaling(df):
-    """Scales data using MinMaxScaler"""
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaled = scaler.fit_transform(df[['Close']])
-    scaled_df = pd.DataFrame(scaled, index=df.index, columns=['Close'])
-    return scaled_df, scaler
-
-def inverse_scaling(scaler, data):
-    """Inverse transform scaled data"""
-    return pd.DataFrame(scaler.inverse_transform(data.values.reshape(-1,1)), index=data.index, columns=['Close'])
+def scaling(df: pd.DataFrame):
+    scaler = MinMaxScaler()
+    scaled = pd.DataFrame(scaler.fit_transform(df), index=df.index, columns=df.columns)
+    return scaled, scaler
 
 # -------------------------------
-# Evaluate ARIMA model
+# Evaluate model (dummy ARIMA prediction)
 # -------------------------------
-def evaluate_model(df_scaled, differencing_order):
-    """
-    Fits an ARIMA model and calculates RMSE on training data
-    df_scaled: scaled dataframe
-    differencing_order: int, ARIMA differencing order
-    """
-    df_scaled_values = df_scaled['Close'].to_numpy()
-    
-    try:
-        model = ARIMA(df_scaled_values, order=(5, differencing_order, 0))
-        model_fit = model.fit()
-        pred = model_fit.fittedvalues
-
-        # Ensure pred is numpy array
-        pred = np.array(pred)
-
-        rmse = np.sqrt(np.mean((df_scaled_values.flatten() - pred.flatten())**2))
-        return rmse
-    except Exception as e:
-        print("ARIMA evaluation error:", e)
-        return np.nan
+def evaluate_model(df_scaled: pd.DataFrame, d: int):
+    model = ARIMA(df_scaled, order=(5, d, 0))
+    fitted = model.fit()
+    pred = fitted.fittedvalues
+    rmse = np.sqrt(np.mean((df_scaled.values.flatten() - pred.flatten())**2))
+    return rmse
 
 # -------------------------------
 # Forecast next 30 days
 # -------------------------------
-def get_forecast(df_scaled, differencing_order, steps=30):
-    """Generates forecast for next 'steps' days using ARIMA"""
-    df_scaled_values = df_scaled['Close'].to_numpy()
-
-    model = ARIMA(df_scaled_values, order=(5, differencing_order, 0))
-    model_fit = model.fit()
-    forecast_values = model_fit.forecast(steps=steps)
-
-    last_index = df_scaled.index[-1]
-    future_index = pd.date_range(start=last_index + pd.Timedelta(days=1), periods=steps, freq='B')
-    forecast_df = pd.DataFrame(forecast_values, index=future_index, columns=['Close'])
+def get_forecast(df_scaled: pd.DataFrame, d: int, steps: int = 30):
+    model = ARIMA(df_scaled, order=(5, d, 0))
+    fitted = model.fit()
+    forecast_values = fitted.forecast(steps=steps)
+    future_dates = pd.date_range(start=df_scaled.index[-1], periods=steps+1, freq='D')[1:]
+    forecast_df = pd.DataFrame(forecast_values, index=future_dates, columns=['Close'])
     return forecast_df
+
+# -------------------------------
+# Inverse scaling
+# -------------------------------
+def inverse_scaling(scaler, df: pd.DataFrame):
+    inv = pd.DataFrame(scaler.inverse_transform(df), index=df.index, columns=df.columns)
+    return inv
