@@ -15,12 +15,12 @@ from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
 # Page config
 # -------------------------------
 st.set_page_config(
-    page_title="🔮 Stock Prediction",
+    page_title="📊 Stock Prediction",
     page_icon="💹",
     layout="wide",
 )
 
-st.title("🔮 Stock Prediction")
+st.title("📊 Stock Prediction")
 
 # -------------------------------
 # User input
@@ -53,12 +53,22 @@ if ticker:
     forecast = get_forecast(scaled_data, differencing_order)
     forecast['Close'] = inverse_scaling(scaler, forecast['Close'])
 
+    # Rename column to 'Value' for plotly_table compatibility
+    forecast_for_table = forecast.rename(columns={'Close': 'Value'})
+
     st.write("🗓️ ##### Forecast Data (Next 30 Days)")
-    st.plotly_chart(plotly_table(forecast.sort_index().round(3)), use_container_width=True)
+    st.plotly_chart(
+        plotly_table(forecast_for_table.sort_index().round(3)),
+        use_container_width=True
+    )
 
     # -------------------------------
     # Combined chart with rolling mean
     # -------------------------------
     combined = pd.concat([rolling_price, forecast])
     combined['MA7'] = combined['Close'].rolling(7).mean()
-    st.plotly_chart(Moving_average_forecast(combined.iloc[-150:]), use_container_width=True)
+
+    st.plotly_chart(
+        Moving_average_forecast(combined.iloc[-150:]),
+        use_container_width=True
+    )
