@@ -1,58 +1,56 @@
-import plotly.graph_objects as go
+import streamlit as st
 import pandas as pd
+from utils.model_train import (
+    get_data,
+    get_rolling_mean,
+    get_differencing_order,
+    scaling,
+    evaluate_model,
+    get_forecast,
+    inverse_scaling
+)
+from utils.plotly_figure import plotly_table, Moving_average_forecast
 
 # -------------------------------
-# Table for Streamlit
+# Page config
 # -------------------------------
-def plotly_table(df: pd.DataFrame):
-    """
-    Creates a Plotly table from a DataFrame.
-    Ensures 'Value' column exists to prevent KeyErrors.
-    """
-    if 'Value' not in df.columns:
-        df['Value'] = df.iloc[:, 0]  # fallback: take first column as Value
+st.set_page_config(
+    page_title="🔮 Stock Prediction",
+    page_icon="💹",
+    layout="wide",
+)
 
-    fig = go.Figure(data=[go.Table(
-        header=dict(values=list(df.columns),
-                    fill_color='lightblue',
-                    align='left'),
-        cells=dict(values=[df.index, df['Value']],
-                   fill_color='lavender',
-                   align='left'))
-    ])
-    return fig
+st.title("Stock Prediction")
 
 # -------------------------------
-# Moving Average + Forecast Chart
+# User input
 # -------------------------------
-def Moving_average_forecast(df: pd.DataFrame):
-    """
-    Plots combined Close price and 7-day moving average.
-    """
-    fig = go.Figure()
-    if 'Close' in df.columns:
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['Close'],
-            mode='lines+markers',
-            name='Close Price',
-            line=dict(color='blue')
-        ))
+col1, _, _ = st.columns(3)
+with col1:
+    ticker = st.text_input("🔎 Stock Ticker", "AAPL")
 
-    if 'MA7' in df.columns:
-        fig.add_trace(go.Scatter(
-            x=df.index,
-            y=df['MA7'],
-            mode='lines',
-            name='7-Day MA',
-            line=dict(color='orange', dash='dash')
-        ))
+if ticker:
+    st.subheader(f"🔮 Predicting Next 30 Days Close Price for: {ticker}")
 
-    fig.update_layout(
-        xaxis_title='Date',
-        yaxis_title='Price',
-        template='plotly_white',
-        margin=dict(l=40, r=40, t=60, b=40)
-    )
+    # Fetch & process data
+    close_price = get_data(ticker)
+    rolling_price = get_rolling_mean(close_price)
 
-    return fig
+    differencing_order = get_differencing_order(rolling_price)
+    scaled_data, scaler = scaling(rolling_price)
+
+    # Compute RMSE
+    rmse = evaluate_model(scaled_data, differencing_order)
+    st.write(f"📊 **Model RMSE Score:** {rmse:.4f}")
+
+    # Forecast next 30 days
+    forecast = get_forecast(scaled_data, differencing_order)
+    forecast['Close'] = inverse_scaling(scaler, forecast['Close'])
+
+    st.write("🗓️ ##### Forecast Data (Next 30 Days)")
+    st.plotly_chart(plotly_table(forecast.sort_index().round(3)), use_container_width=True)
+
+    # Combined chart with rolling mean
+    combined = pd.concat([rolling_price, forecast])
+    combined['MA7'] = combined['Close'].rolling(7).mean()
+    st.plotly_chart(Moving_average_forecast(combined.iloc[-150:]), use_container_width=True)
