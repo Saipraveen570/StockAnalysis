@@ -5,7 +5,7 @@ from pages.utils.plotly_figure import plotly_table, Moving_average_forecast
 
 # Page config
 st.set_page_config(
-    page_title="Stock Prediction",
+    page_title="📈 Stock Prediction",
     page_icon="💹",
     layout="wide",
 )
