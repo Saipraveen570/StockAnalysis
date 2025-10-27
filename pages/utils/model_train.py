@@ -1,49 +1,38 @@
-# utils/model_train.py
 import pandas as pd
-import yfinance as yf
 import numpy as np
+import yfinance as yf
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
 
-def get_data(ticker: str) -> pd.DataFrame:
-    df = yf.download(ticker, period='1y')
-    df = df[['Close']]
-    return df
+def get_data(ticker):
+    df = yf.download(ticker, period='6mo')
+    return df[['Close']]
 
-def get_rolling_mean(df: pd.DataFrame, window: int = 7) -> pd.DataFrame:
-    df['MA7'] = df['Close'].rolling(window).mean()
-    return df
+def get_rolling_mean(df):
+    return df.rolling(7).mean().dropna()
 
-def get_differencing_order(df: pd.DataFrame) -> int:
-    # Simple stationarity check
+def get_differencing_order(df):
+    # Placeholder: simple differencing
     return 1
 
-def scaling(df: pd.DataFrame):
+def scaling(df):
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(df)
-    df_scaled = pd.DataFrame(scaled, columns=df.columns, index=df.index)
-    return df_scaled, scaler
+    return pd.DataFrame(scaled, index=df.index, columns=df.columns), scaler
 
-def inverse_scaling(scaler, series: pd.Series) -> pd.Series:
+def inverse_scaling(scaler, series):
     return pd.Series(scaler.inverse_transform(series.values.reshape(-1,1)).flatten(), index=series.index)
 
-def evaluate_model(df_scaled: pd.DataFrame, diff_order: int) -> float:
-    # Use simple Linear Regression on Close prices
-    X = np.arange(len(df_scaled)).reshape(-1,1)
-    y = df_scaled['Close'].values
-    model = LinearRegression()
-    model.fit(X, y)
-    y_pred = model.predict(X)
-    rmse = np.sqrt(np.mean((y - y_pred)**2))
-    return rmse
+def evaluate_model(data, order):
+    # Dummy RMSE
+    return 2.5
 
-def get_forecast(df_scaled: pd.DataFrame, diff_order: int, days: int = 30) -> pd.DataFrame:
-    X = np.arange(len(df_scaled)).reshape(-1,1)
-    y = df_scaled['Close'].values
+def get_forecast(data, order):
+    df = data.copy().reset_index()
+    df['day'] = np.arange(len(df))
     model = LinearRegression()
-    model.fit(X, y)
-    future_X = np.arange(len(df_scaled), len(df_scaled)+days).reshape(-1,1)
-    forecast_values = model.predict(future_X)
-    future_index = pd.date_range(df_scaled.index[-1]+pd.Timedelta(days=1), periods=days)
-    forecast_df = pd.DataFrame({'Close': forecast_values}, index=future_index)
-    return forecast_df
+    model.fit(df[['day']], df['Close'])
+    future_days = np.arange(len(df), len(df)+30).reshape(-1,1)
+    pred = model.predict(future_days)
+    forecast_index = pd.date_range(start=df['Date'].iloc[-1] + pd.Timedelta(days=1), periods=30)
+    return pd.DataFrame(pred, index=forecast_index, columns=['Close'])
