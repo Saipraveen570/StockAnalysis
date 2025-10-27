@@ -3,6 +3,7 @@ import numpy as np
 import yfinance as yf
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
 
 # -------------------------------
 # 1️⃣ Fetch stock data
@@ -24,7 +25,7 @@ def get_rolling_mean(df: pd.DataFrame) -> pd.DataFrame:
     return df.rolling(7).mean().dropna()
 
 # -------------------------------
-# 3️⃣ Differencing order
+# 3️⃣ Differencing order (placeholder)
 # -------------------------------
 def get_differencing_order(df: pd.DataFrame) -> int:
     """
@@ -57,10 +58,26 @@ def inverse_scaling(scaler, series: pd.Series) -> pd.Series:
 # -------------------------------
 def evaluate_model(data: pd.DataFrame, order: int) -> float:
     """
-    Dummy RMSE function for demonstration.
+    Compute RMSE using a simple train/test split.
     """
-    # Can replace with actual forecasting validation
-    return 2.5
+    df = data.copy().reset_index()
+    df['day'] = np.arange(len(df))
+    
+    # Use last 10 days as test
+    train_df = df.iloc[:-10]
+    test_df = df.iloc[-10:]
+    
+    X_train = train_df[['day']]
+    y_train = train_df['Close']
+    X_test = test_df[['day']]
+    y_test = test_df['Close']
+    
+    model = LinearRegression()
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    return rmse
 
 # -------------------------------
 # 7️⃣ Forecasting using Linear Regression
