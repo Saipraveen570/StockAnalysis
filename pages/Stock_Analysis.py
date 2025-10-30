@@ -86,28 +86,30 @@ with c2:
     })
     st.plotly_chart(plotly_table(df2), use_container_width=True)
 
-# =====================================
-# PRICE DATA + METRICS
-# =====================================
+# =============================
+# Price & Metrics
+# =============================
+
 df = load_price_data(ticker, start_date, end_date)
 
 if df.empty or "Close" not in df.columns:
-    st.warning("Invalid ticker or no data available.")
+    st.warning("No price data available for this ticker.")
     st.stop()
 
 latest = df["Close"].iloc[-1]
 prev = df["Close"].iloc[-2] if len(df) > 1 else latest
 daily_change = latest - prev
 
-# Ensure pure Python floats (removes Series behavior)
-latest_val = float(latest.item() if hasattr(latest, "item") else latest)
-daily_val = float(daily_change.item() if hasattr(daily_change, "item") else daily_change)
+# Convert safely (avoids Series warnings)
+latest_val = float(latest)
+daily_val = float(daily_change)
 
+# Metrics display
 c1, _, _ = st.columns(3)
 c1.metric(
-    "📈 Daily Close",
-    f"{latest_val:.2f}",
-    f"{daily_val:.2f}"
+    label="📈 Daily Close",
+    value=f"{latest_val:.2f}",
+    delta=f"{daily_val:.2f}"
 )
 
 df.index = df.index.astype(str).str[:10]
