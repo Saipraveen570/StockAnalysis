@@ -14,11 +14,16 @@ def get_company_info(ticker):
     except:
         info = {}
 
-    summary = info.get("longBusinessSummary", "No summary available.")
-
     clean = {k: v for k, v in info.items() if isinstance(v, (int, float, str, bool, type(None)))}
-    return clean, summary
+    return clean  # only return dict (serializable)
 
+@st.cache_data(show_spinner=False)
+def get_company_summary(ticker):
+    try:
+        info = yf.Ticker(ticker).info
+        return info.get("longBusinessSummary", "No summary available.")
+    except:
+        return "No summary available."
 
 @st.cache_data(show_spinner=False)
 def load_price_data(ticker, start, end):
@@ -26,7 +31,6 @@ def load_price_data(ticker, start, end):
         return yf.download(ticker, start=start, end=end)
     except:
         return pd.DataFrame()
-
 
 @st.cache_data(show_spinner=False)
 def load_full_price(ticker):
@@ -51,7 +55,8 @@ with col3: end_date = st.date_input("📅 End Date", today)
 # =====================================
 # COMPANY INFO
 # =====================================
-info, summary = get_company_info(ticker)
+info = get_company_info(ticker)
+summary = get_company_summary(ticker)
 
 st.subheader(f"🏢 {ticker} Overview")
 st.write(summary)
@@ -90,9 +95,12 @@ if df.empty:
     st.warning("Invalid ticker or no data available.")
     st.stop()
 
-daily_change = df["Close"].iloc[-1] - df["Close"].iloc[-2]
+latest = df["Close"].iloc[-1]
+prev = df["Close"].iloc[-2] if len(df) > 1 else latest
+daily_change = latest - prev
+
 c1, _, _ = st.columns(3)
-c1.metric("📈 Daily Close", round(df["Close"].iloc[-1], 2), round(daily_change, 2))
+c1.metric("📈 Daily Close", round(latest, 2), round(daily_change, 2))
 
 df.index = df.index.astype(str).str[:10]
 st.write("🗂️ Last 10 Days Data")
@@ -113,8 +121,8 @@ for i, p in enumerate(periods):
     if cols[i].button(p):
         st.session_state.period = p
 
-p = st.session_state.period.lower()
-period = "max" if p == "max" else p
+period = st.session_state.period.lower()
+period = "max" if period == "max" else period
 
 # =====================================
 # Chart Options
@@ -123,7 +131,10 @@ c1, c2 = st.columns(2)
 with c1:
     chart_type = st.selectbox("📊 Chart Type", ["Candle", "Line"])
 with c2:
-    indicators = st.selectbox("📈 Indicator", ["RSI", "Moving Average", "MACD"] if chart_type == "Line" else ["RSI", "MACD"])
+    indicators = st.selectbox(
+        "📈 Indicator",
+        ["RSI", "Moving Average", "MACD"] if chart_type == "Line" else ["RSI", "MACD"],
+    )
 
 rsi_window = st.slider("RSI Window", 5, 50, 14)
 
@@ -134,30 +145,25 @@ if data_full.empty or "Close" not in data_full.columns:
     st.stop()
 
 # =====================================
-# CHART RENDERING — Safe & Fast
+# CHART RENDERING — Stable
 # =====================================
 if chart_type == "Candle":
     st.plotly_chart(candlestick(data_full, period), use_container_width=True)
 
     if indicators == "RSI":
-        try: st.plotly_chart(RSI(data_full, period, rsi_window), use_container_width=True)
-        except: st.warning("RSI unavailable for this period")
+        st.plotly_chart(RSI(data_full, period, rsi_window), use_container_width=True)
 
     elif indicators == "MACD":
-        try: st.plotly_chart(MACD(data_full, period), use_container_width=True)
-        except: st.warning("MACD unavailable")
+        st.plotly_chart(MACD(data_full, period), use_container_width=True)
+
 else:
-    try: st.plotly_chart(close_chart(data_full, period), use_container_width=True)
-    except: st.warning("Unable to load chart")
+    st.plotly_chart(close_chart(data_full, period), use_container_width=True)
 
     if indicators == "RSI":
-        try: st.plotly_chart(RSI(data_full, period, rsi_window), use_container_width=True)
-        except: st.warning("RSI unavailable")
+        st.plotly_chart(RSI(data_full, period, rsi_window), use_container_width=True)
 
     elif indicators == "Moving Average":
-        try: st.plotly_chart(Moving_average(data_full, period), use_container_width=True)
-        except: st.warning("SMA unavailable")
+        st.plotly_chart(Moving_average(data_full, period), use_container_width=True)
 
     elif indicators == "MACD":
-        try: st.plotly_chart(MACD(data_full, period), use_container_width=True)
-        except: st.warning("MACD unavailable")
+        st.plotly_chart(MACD(data_full, period), use_container_width=True)
