@@ -117,15 +117,21 @@ else:
 
     st.markdown("""<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" />""", unsafe_allow_html=True)
 
-    # Period buttons
-    periods = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
-    col_buttons = st.columns(len(periods))
-    num_period = ""
-    for i, p in enumerate(periods):
-        if col_buttons[i].button(f"{p}"):
-            num_period = p.lower()
-    if num_period == "":
-        num_period = "1y"
+    # Period buttons with session state
+periods = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
+
+if "selected_period" not in st.session_state:
+    st.session_state.selected_period = "1Y"
+
+cols = st.columns(len(periods))
+
+for i, p in enumerate(periods):
+    if cols[i].button(p):
+        st.session_state.selected_period = p
+
+# Convert to yfinance format
+selected = st.session_state.selected_period.lower()
+num_period = "max" if selected == "max" else selected
 
     # Chart selection
     col1, col2 = st.columns([1, 1])
