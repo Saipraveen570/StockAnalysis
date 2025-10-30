@@ -1,172 +1,123 @@
 import streamlit as st
-import pandas as pd
 import yfinance as yf
-import datetime
-from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+import warnings
+warnings.filterwarnings("ignore")
 
-# =====================================
-# SAFE DATA FUNCTIONS
-# =====================================
+st.set_page_config(page_title="Stock Analysis", layout="wide")
+
+# ========= Styling =========
+st.markdown("""
+<style>
+.metric-card {
+    background-color: #1e1e1e;
+    padding: 18px;
+    border-radius: 12px;
+    border: 1px solid #444;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ========= Functions =========
 @st.cache_data(show_spinner=False)
-def get_company_info(ticker):
+def load_data(ticker, start, end):
     try:
-        info = yf.Ticker(ticker).info
+        data = yf.download(ticker, start=start, end=end)
+        if data.empty:
+            return None
+        data["Return"] = data["Close"].pct_change()
+        return data
     except:
-        info = {}
+        return None
 
-    clean = {k: v for k, v in info.items() if isinstance(v, (int, float, str, bool, type(None)))}
-    return clean
-
-@st.cache_data(show_spinner=False)
-def get_company_summary(ticker):
+def safe_number(x):
     try:
-        info = yf.Ticker(ticker).info
-        return info.get("longBusinessSummary", "No summary available.")
+        return round(float(x), 2)
     except:
-        return "No summary available."
+        return 0.0
 
-@st.cache_data(show_spinner=False)
-def load_price_data(ticker, start, end):
-    try:
-        return yf.download(ticker, start=start, end=end)
-    except:
-        return pd.DataFrame()
+# ========= Sidebar =========
+st.sidebar.header("Stock Selection")
+ticker = st.sidebar.text_input("Ticker Symbol", "AAPL")
+start = st.sidebar.date_input("Start Date", datetime(2023, 1, 1))
+end = st.sidebar.date_input("End Date", datetime.today())
 
-@st.cache_data(show_spinner=False)
-def load_full_price(ticker):
-    try:
-        return yf.Ticker(ticker).history(period="max")
-    except:
-        return pd.DataFrame()
+# ========= Page Header =========
+st.title("📊 Stock Market Analysis Dashboard")
+st.write("Analyze historical performance, price trends, and forecast movements.")
 
-# =====================================
-# PAGE CONFIG
-# =====================================
-st.set_page_config(page_title="Stock Analysis", page_icon="💹", layout="wide")
-st.title("Stock Analysis")
+# ========= Load Data =========
+data = load_data(ticker.upper(), start, end)
 
-today = datetime.date.today()
+if data is None:
+    st.error("Invalid ticker or no data available. Try another symbol.")
+    st.stop()
+
+# ========= KPI Metrics =========
+latest = data["Close"].iloc[-1]
+prev = data["Close"].iloc[-2]
+daily_change = safe_number(latest - prev)
+pct_change = safe_number((daily_change / prev) * 100)
 
 col1, col2, col3 = st.columns(3)
-with col1: ticker = st.text_input("🔎 Stock Ticker", "AAPL")
-with col2: start_date = st.date_input("📅 Start Date", today - datetime.timedelta(days=365))
-with col3: end_date = st.date_input("📅 End Date", today)
 
-# =====================================
-# COMPANY INFO
-# =====================================
-info = get_company_info(ticker)
-summary = get_company_summary(ticker)
+with col1:
+    st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
+    st.metric("Price", f"${safe_number(latest)}", f"{pct_change}%")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-st.subheader(f"🏢 {ticker} Overview")
-st.write(summary)
-st.write("💼 Sector:", info.get("sector", "N/A"))
-st.write("👥 Employees:", info.get("fullTimeEmployees", "N/A"))
-st.write("🌐 Website:", info.get("website", "N/A"))
+with col2:
+    st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
+    st.metric("Daily Change", f"${daily_change}")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-c1, c2 = st.columns(2)
-with c1:
-    df1 = pd.DataFrame({
-        "Metric": ["Market Cap", "Beta", "EPS", "PE Ratio"],
-        "Value": [
-            info.get("marketCap"), info.get("beta"),
-            info.get("trailingEps"), info.get("trailingPE"),
-        ]
-    })
-    st.plotly_chart(plotly_table(df1), use_container_width=True)
+with col3:
+    st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
+    st.metric("Volatility", f"{safe_number(np.std(data['Return']) * 100)}%")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-with c2:
-    df2 = pd.DataFrame({
-        "Metric": ["Quick Ratio", "Rev/Share", "Profit Margin", "Debt/Equity", "ROE"],
-        "Value": [
-            info.get("quickRatio"), info.get("revenuePerShare"),
-            info.get("profitMargins"), info.get("debtToEquity"),
-            info.get("returnOnEquity"),
-        ]
-    })
-    st.plotly_chart(plotly_table(df2), use_container_width=True)
+# ========= Charts =========
+st.subheader("📈 Price Chart with Moving Averages")
 
-# =============================
-# Price & Metrics
-# =============================
-df = load_price_data(ticker, start_date, end_date)
+data["MA20"] = data["Close"].rolling(window=20).mean()
+data["MA50"] = data["Close"].rolling(window=50).mean()
 
-if df.empty or "Close" not in df.columns:
-    st.warning("No price data available for this ticker.")
-    st.stop()
+fig = go.Figure()
+fig.add_trace(go.Candlestick(
+    x=data.index, open=data['Open'], high=data['High'],
+    low=data['Low'], close=data['Close'], name='Price'
+))
+fig.add_trace(go.Scatter(x=data.index, y=data["MA20"], mode="lines", name="MA20"))
+fig.add_trace(go.Scatter(x=data.index, y=data["MA50"], mode="lines", name="MA50"))
+fig.update_layout(height=450, template="plotly_dark", xaxis_rangeslider_visible=False)
 
-latest_val = df["Close"].iloc[-1].item()
-daily_val = (df["Close"].iloc[-1] - df["Close"].iloc[-2]).item() if len(df) > 1 else 0.0
+st.plotly_chart(fig, use_container_width=True)
 
-c1, _, _ = st.columns(3)
-c1.metric(
-    label="📈 Daily Close",
-    value=f"{latest_val:.2f}",
-    delta=f"{daily_val:.2f}"
-)
+# ========= Volume =========
+st.subheader("📊 Volume Analysis")
+vol_fig = px.bar(data, x=data.index, y="Volume")
+vol_fig.update_layout(template="plotly_dark", height=300)
+st.plotly_chart(vol_fig, use_container_width=True)
 
-df.index = df.index.astype(str).str[:10]
-st.write("🗂️ Last 10 Days Data")
-st.plotly_chart(plotly_table(df.tail(10).round(3).iloc[::-1]), use_container_width=True)
+# ========= Forecasting =========
+st.subheader("📉 Forecast Prices (SARIMAX)")
 
-st.markdown("<hr>", unsafe_allow_html=True)
+if st.button("Run Forecast Model"):
+    try:
+        model = SARIMAX(data["Close"], order=(1, 1, 1), seasonal_order=(1,1,1,12))
+        result = model.fit(disp=False)
+        forecast = result.forecast(steps=15)
+        forecast_fig = px.line(forecast, title="15-Day Forecast", labels={"index": "Date", "value": "Price"})
+        forecast_fig.update_layout(template="plotly_dark")
+        st.plotly_chart(forecast_fig, use_container_width=True)
+    except Exception:
+        st.error("Forecasting failed due to insufficient data or model instability.")
 
-# =====================================
-# PERIOD SELECTOR — FIXED
-# =====================================
-periods = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
-
-if "period" not in st.session_state:
-    st.session_state.period = "1Y"
-
-cols = st.columns(len(periods))
-for i, p in enumerate(periods):
-    if cols[i].button(p):
-        st.session_state.period = p
-
-# Keep case sensitivity correct
-period = st.session_state.period
-
-# =====================================
-# Chart Options
-# =====================================
-c1, c2 = st.columns(2)
-with c1:
-    chart_type = st.selectbox("📊 Chart Type", ["Candle", "Line"])
-with c2:
-    indicators = st.selectbox(
-        "📈 Indicator",
-        ["RSI", "Moving Average", "MACD"] if chart_type == "Line" else ["RSI", "MACD"],
-    )
-
-rsi_window = st.slider("RSI Window", 5, 50, 14)
-
-data_full = load_full_price(ticker)
-
-if data_full.empty or "Close" not in data_full.columns:
-    st.error("Error loading historical data.")
-    st.stop()
-
-# =====================================
-# CHART RENDERING — STABLE
-# =====================================
-if chart_type == "Candle":
-    st.plotly_chart(candlestick(data_full, period), use_container_width=True)
-
-    if indicators == "RSI":
-        st.plotly_chart(RSI(data_full, period, rsi_window), use_container_width=True)
-
-    elif indicators == "MACD":
-        st.plotly_chart(MACD(data_full, period), use_container_width=True)
-
-else:
-    st.plotly_chart(close_chart(data_full, period), use_container_width=True)
-
-    if indicators == "RSI":
-        st.plotly_chart(RSI(data_full, period, rsi_window), use_container_width=True)
-
-    elif indicators == "Moving Average":
-        st.plotly_chart(Moving_average(data_full, period), use_container_width=True)
-
-    elif indicators == "MACD":
-        st.plotly_chart(MACD(data_full, period), use_container_width=True)
+# ========= Raw Data Toggle =========
+with st.expander("View Raw Data"):
+    st.dataframe(data.tail())
