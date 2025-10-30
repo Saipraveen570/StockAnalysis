@@ -12,11 +12,19 @@ st.set_page_config(page_title="Stock Analysis", layout="wide")
 # =========================
 @st.cache_data(ttl=3600)
 def get_stock_data(symbol):
+    symbol = symbol.strip().upper()
+
+    # Auto .NS for India stocks unless already includes suffix or is US known ticker
+    us_tickers = ["AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA"]
+    if "." not in symbol and symbol not in us_tickers:
+        yahoo_symbol = symbol + ".NS"
+    else:
+        yahoo_symbol = symbol
+
     try:
-        df = yf.download(symbol, period="5y", progress=False)
+        df = yf.download(yahoo_symbol, period="5y", progress=False)
         if df is None or df.empty:
-            # Auto fallback for NSE
-            df = yf.download(symbol + ".NS", period="5y", progress=False)
+            return None
         return df
     except:
         return None
@@ -27,6 +35,7 @@ def get_stock_data(symbol):
 def slice_period(df, period):
     if df is None or df.empty:
         return df
+
     if period == "1Y":
         return df.tail(252)
     if period == "6M":
@@ -42,6 +51,7 @@ def slice_period(df, period):
 # =========================
 @st.cache_data
 def compute_indicators(df):
+    df = df.copy()
     df['MA20'] = df['Close'].rolling(20).mean()
     df['MA50'] = df['Close'].rolling(50).mean()
 
@@ -52,7 +62,7 @@ def compute_indicators(df):
     df["MACD"] = macd.macd()
     df["Signal"] = macd.macd_signal()
 
-    return df
+    return df.fillna(method="bfill").fillna(method="ffill")
 
 # =========================
 # Plotly Chart Functions
@@ -77,8 +87,8 @@ def plot_candles(df):
 def plot_rsi(df):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], mode="lines", name="RSI"))
-    fig.add_hline(y=70, line=dict(color="red", dash="dot"))
-    fig.add_hline(y=30, line=dict(color="green", dash="dot"))
+    fig.add_hline(y=70, line=dict(dash="dot"))
+    fig.add_hline(y=30, line=dict(dash="dot"))
     fig.update_layout(title="RSI Indicator", template="plotly_white", height=250)
     return fig
 
@@ -94,7 +104,7 @@ def plot_macd(df):
 # =========================
 st.markdown("## Stock Analysis Dashboard")
 
-ticker = st.text_input("Enter Stock Ticker (AAPL, TSLA, RELIANCE.NS)", "").strip().upper()
+ticker = st.text_input("Enter Stock Ticker (AAPL, TSLA, RELIANCE)", "").strip().upper()
 
 if not ticker:
     st.info("Enter a stock symbol to begin.")
@@ -115,18 +125,26 @@ df = compute_indicators(df)
 period = st.radio("Select Time Range:", ["1M", "6M", "1Y", "YTD", "MAX"], horizontal=True)
 df_period = slice_period(df, period)
 
+# Empty safety
+if df_period is None or df_period.empty:
+    st.error("Data unavailable for selected period")
+    st.stop()
+
 # =========================
 # Metrics
 # =========================
 latest = df_period["Close"].iloc[-1]
 prev = df_period["Close"].iloc[-2] if len(df_period) > 1 else latest
-daily_change = round(latest - prev, 2)
-pct_change = round((daily_change / prev) * 100, 2) if prev != 0 else 0
+
+daily_change = latest - prev
+pct_change = (daily_change / prev) * 100 if prev != 0 else 0
+
+volume = df_period["Volume"].iloc[-1] if "Volume" in df_period.columns else 0
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Current Price", f"{latest:.2f}", f"{daily_change:.2f}")
-c2.metric("Daily % Change", f"{pct_change} %")
-c3.metric("Volume", f"{int(df_period['Volume'].iloc[-1]):,}")
+c2.metric("Daily % Change", f"{pct_change:.2f} %")
+c3.metric("Volume", f"{int(volume):,}")
 
 # =========================
 # Charts
