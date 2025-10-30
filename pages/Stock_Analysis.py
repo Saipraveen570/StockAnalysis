@@ -4,30 +4,42 @@ import yfinance as yf
 import datetime
 from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD
 
-# ------------------ FIX FUNCTIONS ------------------
-
-@st.cache_data(ttl=3600)
+# ==============================
+# Cache wrappers
+# ==============================
+@st.cache_data(show_spinner=False)
 def get_company_info(ticker):
-    stock = yf.Ticker(ticker)
     try:
-        fast = stock.fast_info
-        full = stock.get_info()  # one call only
-        summary = full.get("longBusinessSummary", "No summary available")
-        return fast, full, summary
+        stock = yf.Ticker(ticker)
+        fast_info = stock.fast_info if hasattr(stock, "fast_info") else {}
+        full_info = stock.info if isinstance(stock.info, dict) else {}
+        summary = full_info.get("longBusinessSummary", "No summary available")
+        return fast_info, full_info, summary
     except Exception:
-        return {}, {}, "Yahoo Finance rate limit reached. Try again later."
+        return {}, {}, "Error fetching company info"
 
-@st.cache_data(ttl=3600)
-def get_history(ticker, start, end):
-    return yf.download(ticker, start=start, end=end)
+@st.cache_data(show_spinner=False)
+def load_price_data(ticker, start, end):
+    try:
+        return yf.download(ticker, start=start, end=end)
+    except Exception:
+        return pd.DataFrame()
 
-@st.cache_data(ttl=3600)
-def get_max_history(ticker):
-    return yf.Ticker(ticker).history(period="max")
+@st.cache_data(show_spinner=False)
+def load_full_history(ticker):
+    try:
+        return yf.Ticker(ticker).history(period="max")
+    except Exception:
+        return pd.DataFrame()
 
-# ------------------ UI ------------------
-
-st.set_page_config(page_title="Stock Analysis", page_icon="💹", layout="wide")
+# ==============================
+# Page layout
+# ==============================
+st.set_page_config(
+    page_title="Stock Analysis",
+    page_icon="💹",
+    layout="wide",
+)
 
 st.title("Stock Analysis")
 
@@ -41,18 +53,16 @@ with col2:
 with col3:
     end_date = st.date_input("📅 End Date", today)
 
-st.subheader(f"🏢 {ticker} Overview")
-
-# SAFE FETCH
+# Company info
 fast_info, full_info, summary = get_company_info(ticker)
 
-# Company details
+st.subheader(f"🏢 {ticker} Overview")
 st.write(summary)
 st.write("💼 Sector:", full_info.get('sector', 'N/A'))
 st.write("👥 Full Time Employees:", full_info.get('fullTimeEmployees', 'N/A'))
 st.write("🌐 Website:", full_info.get('website', 'N/A'))
 
-# Metrics
+# Metrics tables
 col1, col2 = st.columns(2)
 with col1:
     df1 = pd.DataFrame(index=['Market Cap','Beta','EPS','PE Ratio'])
@@ -60,7 +70,7 @@ with col1:
         full_info.get("marketCap"),
         full_info.get("beta"),
         full_info.get("trailingEps"),
-        full_info.get("trailingPE")
+        full_info.get("trailingPE"),
     ]
     st.plotly_chart(plotly_table(df1), use_container_width=True)
 
@@ -71,12 +81,14 @@ with col2:
         full_info.get("revenuePerShare"),
         full_info.get("profitMargins"),
         full_info.get("debtToEquity"),
-        full_info.get("returnOnEquity")
+        full_info.get("returnOnEquity"),
     ]
     st.plotly_chart(plotly_table(df2), use_container_width=True)
 
-# Historical data
-data = get_history(ticker, start_date, end_date)
+# ==========================
+# Historical data (cached)
+# ==========================
+data = load_price_data(ticker, start_date, end_date)
 
 if len(data) < 1:
     st.warning('❌ Please enter a valid stock ticker')
@@ -87,11 +99,17 @@ else:
 
     data.index = [str(i)[:10] for i in data.index]
     st.write('🗂️ Historical Data (Last 10 days)')
-    st.plotly_chart(plotly_table(data.tail(10).sort_index(ascending=False).round(3)), use_container_width=True)
+    st.plotly_chart(
+        plotly_table(data.tail(10).sort_index(ascending=False).round(3)),
+        use_container_width=True
+    )
 
-    st.markdown("""<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" />""", unsafe_allow_html=True)
+    st.markdown(
+        """<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" />""",
+        unsafe_allow_html=True
+    )
 
-    # Buttons
+    # Period buttons
     periods = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
     col_buttons = st.columns(len(periods))
     num_period = ''
@@ -101,7 +119,7 @@ else:
     if num_period == '':
         num_period = '1y'
 
-    # Chart type
+    # Chart & indicator selection
     col1, col2 = st.columns([1,1])
     with col1:
         chart_type = st.selectbox('📊 Chart Type', ('Candle','Line'))
@@ -113,8 +131,10 @@ else:
 
     rsi_window = st.slider("🔧 Select RSI Window (days)", 5, 50, 14)
 
-    df_history = get_max_history(ticker)
+    # Cached full history
+    df_history = load_full_history(ticker)
 
+    # Plot charts
     if chart_type == 'Candle':
         st.plotly_chart(candlestick(df_history, num_period), use_container_width=True)
         if indicators == 'RSI':
