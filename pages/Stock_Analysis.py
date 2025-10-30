@@ -1,62 +1,68 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 import plotly.graph_objects as go
 import ta
 
-st.set_page_config(page_title="Stock Analysis", layout="wide")
+st.set_page_config(page_title="Stock Insight & Forecast Console", layout="wide")
 
 # =========================
-# Safe Cached Data Loader
+# Modern UI CSS
+# =========================
+st.markdown("""
+<style>
+body { font-family: 'Inter', sans-serif; }
+.metric-card {
+    background: rgba(255,255,255,0.05);
+    padding: 18px;
+    border-radius: 14px;
+    border: 1px solid #444;
+    backdrop-filter: blur(8px);
+    margin-bottom: 12px;
+}
+.chart-container {
+    border: 1px solid #3A3A3A;
+    padding: 14px;
+    border-radius: 10px;
+    background: #1e1e1e;
+    margin-top: 12px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# Title
+# =========================
+st.title("📊 Stock Insight & Forecast Console")
+st.markdown("Real-time performance, trend indicators & actionable metrics.")
+st.divider()
+
+# =========================
+# Data Fetch with Fallback
 # =========================
 @st.cache_data(ttl=3600)
-def get_stock_data(symbol):
-    symbol = symbol.strip().upper()
+def load_data(symbol: str):
+    symbol = symbol.upper().strip()
 
-    # Known US tickers (skip NSE auto add for these)
-    us_tickers = ["AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA"]
+    if "." not in symbol:
+        yahoo_symbol = symbol + ".NS"
+    else:
+        yahoo_symbol = symbol
 
-    attempts = [symbol]
-
-    # If no suffix and not in US list, try NSE version
-    if "." not in symbol and symbol not in us_tickers:
-        attempts.append(symbol + ".NS")
-
-    # Try both options
-    for sym in attempts:
+    for s in [symbol, yahoo_symbol]:
         try:
-            df = yf.download(sym, period="5y", progress=False, auto_adjust=True)
+            df = yf.download(s, period="5y", progress=False)
             if df is not None and not df.empty:
-                df["Symbol"] = sym
                 return df
-        except:
-            pass
-
+        except Exception:
+            continue
     return None
 
 # =========================
-# Slice Period Function
-# =========================
-def slice_period(df, period):
-    if df is None or df.empty:
-        return df
-
-    if period == "1Y":
-        return df.tail(252)
-    if period == "6M":
-        return df.tail(126)
-    if period == "1M":
-        return df.tail(21)
-    if period == "YTD":
-        return df[df.index.year == pd.Timestamp.today().year]
-    return df
-
-# =========================
-# Cached Indicators
+# Technical Indicators
 # =========================
 @st.cache_data
-def compute_indicators(df):
+def add_indicators(df):
     df = df.copy()
     df["MA20"] = df["Close"].rolling(20).mean()
     df["MA50"] = df["Close"].rolling(50).mean()
@@ -71,97 +77,102 @@ def compute_indicators(df):
     return df.fillna(method="bfill").fillna(method="ffill")
 
 # =========================
-# Plotly Chart Functions
+# Charts
 # =========================
-def plot_price(df):
+def price_chart(df):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name="Close"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA20"], mode="lines", name="MA20"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA50"], mode="lines", name="MA50"))
-    fig.update_layout(title="Price Chart with Moving Averages",
-                      template="plotly_white", height=350)
+    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Close"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["MA20"], name="MA20"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["MA50"], name="MA50"))
+    fig.update_layout(title="Price & Moving Averages", template="plotly_dark", height=340)
     return fig
 
-def plot_candles(df):
+def candle(df):
     fig = go.Figure(data=[go.Candlestick(
-        x=df.index, open=df["Open"], high=df["High"],
-        low=df["Low"], close=df["Close"]
+        x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"]
     )])
-    fig.update_layout(title="Candlestick Chart", template="plotly_white", height=350)
+    fig.update_layout(template="plotly_dark", title="Candlestick Chart", height=340)
     return fig
 
-def plot_rsi(df):
+def rsi_chart(df):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], mode="lines", name="RSI"))
-    fig.add_hline(y=70, line=dict(dash="dot"))
-    fig.add_hline(y=30, line=dict(dash="dot"))
-    fig.update_layout(title="RSI Indicator", template="plotly_white", height=250)
+    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI"))
+    fig.add_hline(y=70, line_dash="dot")
+    fig.add_hline(y=30, line_dash="dot")
+    fig.update_layout(template="plotly_dark", title="RSI", height=240)
     return fig
 
-def plot_macd(df):
+def macd_chart(df):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD"))
     fig.add_trace(go.Scatter(x=df.index, y=df["Signal"], name="Signal"))
-    fig.update_layout(title="MACD Indicator", template="plotly_white", height=250)
+    fig.update_layout(template="plotly_dark", title="MACD", height=240)
     return fig
 
 # =========================
-# UI
+# UI Input
 # =========================
-st.markdown("## Stock Analysis Dashboard")
+col1, col2 = st.columns([3,1])
+symbol = col1.text_input("Enter Stock Symbol", value="AAPL")
+run = col2.button("Analyze", use_container_width=True)
 
-ticker = st.text_input(
-    "Enter Stock Ticker (Examples: AAPL, TSLA, RELIANCE, HDFCBANK)",
-    "").strip().upper()
-
-if not ticker:
-    st.info("Enter a stock symbol to begin.")
+if not run:
+    st.info("Enter a stock symbol and click Analyze.")
     st.stop()
 
+# =========================
+# Load Data
+# =========================
 with st.spinner("Fetching data..."):
-    df = get_stock_data(ticker)
+    df = load_data(symbol)
 
 if df is None or df.empty:
-    st.error("Invalid ticker or data unavailable. Try: AAPL, TSLA, RELIANCE.NS")
+    st.error("Invalid symbol or data unavailable. Try: AAPL, TSLA, RELIANCE, TCS, INFY")
     st.stop()
 
-df = compute_indicators(df)
+df = add_indicators(df)
 
 # =========================
-# Time Filters
+# Metrics Calculation
 # =========================
-period = st.radio("Select Time Range:", ["1M", "6M", "1Y", "YTD", "MAX"], horizontal=True)
-df_period = slice_period(df, period)
-
-if df_period is None or df_period.empty:
-    st.error("Data unavailable for selected period")
-    st.stop()
-
-# =========================
-# Metrics
-# =========================
-latest = df_period["Close"].iloc[-1]
-prev = df_period["Close"].iloc[-2] if len(df_period) > 1 else latest
-
+latest = df["Close"].iloc[-1]
+prev = df["Close"].iloc[-2]
 daily_change = latest - prev
-pct_change = (daily_change / prev) * 100 if prev != 0 else 0
+pct_change = (daily_change / prev) * 100
 
-volume = df_period["Volume"].iloc[-1] if "Volume" in df_period.columns else 0
+def metric_card(title, value, change):
+    color = "green" if change >= 0 else "red"
+    st.markdown(f"""
+    <div class="metric-card">
+        <h4>{title}</h4>
+        <h2>{value}</h2>
+        <p style="color:{color}; font-weight:600">Δ {round(change,2)}</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 c1, c2, c3 = st.columns(3)
-c1.metric("Current Price", f"{latest:.2f}", f"{daily_change:.2f}")
-c2.metric("Daily % Change", f"{pct_change:.2f} %")
-c3.metric("Volume", f"{int(volume):,}")
+metric_card("Current Price", f"{latest:.2f}", daily_change)
+metric_card("Daily % Change", f"{pct_change:.2f}%", pct_change)
+metric_card("Volume", f"{df['Volume'].iloc[-1]:,}", 0)
 
 # =========================
-# Charts
+# Charts Display
 # =========================
-st.plotly_chart(plot_price(df_period), use_container_width=True)
+st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
+st.plotly_chart(price_chart(df), use_container_width=True)
+st.markdown("</div>", unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
-with col1:
-    st.plotly_chart(plot_candles(df_period), use_container_width=True)
-with col2:
-    st.plotly_chart(plot_rsi(df_period), use_container_width=True)
+colA, colB = st.columns(2)
+with colA:
+    st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
+    st.plotly_chart(candle(df), use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-st.plotly_chart(plot_macd(df_period), use_container_width=True)
+with colB:
+    st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
+    st.plotly_chart(rsi_chart(df), use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
+st.plotly_chart(macd_chart(df), use_container_width=True)
+st.markdown("</div>", unsafe_allow_html=True)
