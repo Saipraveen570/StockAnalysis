@@ -12,15 +12,12 @@ def get_company_info(ticker):
     stock = yf.Ticker(ticker)
 
     try:
-        # Fetch raw info safely
         info_raw = stock.info if isinstance(stock.info, dict) else {}
     except Exception:
         info_raw = {}
 
-    # Extract summary text
     summary = info_raw.get("longBusinessSummary", "No summary available")
 
-    # Convert only simple serializable types
     clean_info = {}
     for key, value in info_raw.items():
         if isinstance(value, (str, int, float, bool, type(None))):
@@ -36,13 +33,13 @@ def load_price_data(ticker, start, end):
     except:
         return pd.DataFrame()
 
-
 @st.cache_data(show_spinner=False)
 def load_full_history(ticker):
     try:
         return yf.Ticker(ticker).history(period="max")
     except:
         return pd.DataFrame()
+
 
 # ==============================
 # PAGE CONFIG
@@ -99,6 +96,7 @@ with col2:
     ]
     st.plotly_chart(plotly_table(df2), use_container_width=True)
 
+
 # ==============================
 # HISTORICAL DATA
 # ==============================
@@ -117,23 +115,23 @@ else:
 
     st.markdown("""<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" />""", unsafe_allow_html=True)
 
-    # Period buttons with session state
-periods = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
+    # ✅ Period buttons with session state
+    periods = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
 
-if "selected_period" not in st.session_state:
-    st.session_state.selected_period = "1Y"
+    if "selected_period" not in st.session_state:
+        st.session_state.selected_period = "1Y"
 
-cols = st.columns(len(periods))
+    cols = st.columns(len(periods))
+    for i, p in enumerate(periods):
+        if cols[i].button(p):
+            st.session_state.selected_period = p
 
-for i, p in enumerate(periods):
-    if cols[i].button(p):
-        st.session_state.selected_period = p
+    selected = st.session_state.selected_period.lower()
+    num_period = "max" if selected == "max" else selected
 
-# Convert to yfinance format
-selected = st.session_state.selected_period.lower()
-num_period = "max" if selected == "max" else selected
-
+    # ==============================
     # Chart selection
+    # ==============================
     col1, col2 = st.columns([1, 1])
     with col1:
         chart_type = st.selectbox("📊 Chart Type", ("Candle", "Line"))
