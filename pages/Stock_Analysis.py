@@ -15,7 +15,7 @@ def get_company_info(ticker):
         info = {}
 
     clean = {k: v for k, v in info.items() if isinstance(v, (int, float, str, bool, type(None)))}
-    return clean  # only return dict (serializable)
+    return clean
 
 @st.cache_data(show_spinner=False)
 def get_company_summary(ticker):
@@ -89,22 +89,15 @@ with c2:
 # =============================
 # Price & Metrics
 # =============================
-
 df = load_price_data(ticker, start_date, end_date)
 
 if df.empty or "Close" not in df.columns:
     st.warning("No price data available for this ticker.")
     st.stop()
 
-latest = df["Close"].iloc[-1]
-prev = df["Close"].iloc[-2] if len(df) > 1 else latest
-daily_change = latest - prev
+latest_val = df["Close"].iloc[-1].item()
+daily_val = (df["Close"].iloc[-1] - df["Close"].iloc[-2]).item() if len(df) > 1 else 0.0
 
-# Convert safely (avoids Series warnings)
-latest_val = float(latest)
-daily_val = float(daily_change)
-
-# Metrics display
 c1, _, _ = st.columns(3)
 c1.metric(
     label="📈 Daily Close",
@@ -119,7 +112,7 @@ st.plotly_chart(plotly_table(df.tail(10).round(3).iloc[::-1]), use_container_wid
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # =====================================
-# PERIOD SELECTOR — Stable Session
+# PERIOD SELECTOR — FIXED
 # =====================================
 periods = ["5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]
 
@@ -131,8 +124,8 @@ for i, p in enumerate(periods):
     if cols[i].button(p):
         st.session_state.period = p
 
-period = st.session_state.period.lower()
-period = "max" if period == "max" else period
+# Keep case sensitivity correct
+period = st.session_state.period
 
 # =====================================
 # Chart Options
@@ -155,7 +148,7 @@ if data_full.empty or "Close" not in data_full.columns:
     st.stop()
 
 # =====================================
-# CHART RENDERING — Stable
+# CHART RENDERING — STABLE
 # =====================================
 if chart_type == "Candle":
     st.plotly_chart(candlestick(data_full, period), use_container_width=True)
