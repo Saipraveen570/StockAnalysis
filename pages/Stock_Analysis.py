@@ -8,23 +8,25 @@ from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RS
 # ✅ SAFE CACHE FUNCTIONS
 # ==============================
 
-@st.cache_data(show_spinner=False)
 def get_company_info(ticker):
+    stock = yf.Ticker(ticker)
+
     try:
-        stock = yf.Ticker(ticker)
+        # Fetch raw info safely
         info_raw = stock.info if isinstance(stock.info, dict) else {}
-
-        summary = info_raw.get("longBusinessSummary", "No summary available")
-
-        # Keep only serializable values
-        clean_info = {}
-        for key, value in info_raw.items():
-            if isinstance(value, (str, int, float, bool, type(None))):
-                clean_info[key] = value
-
-        return clean_info, summary
     except Exception:
-        return {}, "Error fetching company info"
+        info_raw = {}
+
+    # Extract summary text
+    summary = info_raw.get("longBusinessSummary", "No summary available")
+
+    # Convert only simple serializable types
+    clean_info = {}
+    for key, value in info_raw.items():
+        if isinstance(value, (str, int, float, bool, type(None))):
+            clean_info[key] = value
+
+    return clean_info, summary
 
 
 @st.cache_data(show_spinner=False)
