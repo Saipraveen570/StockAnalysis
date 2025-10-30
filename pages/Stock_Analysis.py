@@ -14,20 +14,26 @@ st.set_page_config(page_title="Stock Analysis", layout="wide")
 def get_stock_data(symbol):
     symbol = symbol.strip().upper()
 
-    # Auto .NS for India stocks unless already includes suffix or is US known ticker
+    # Known US tickers (skip NSE auto add for these)
     us_tickers = ["AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA"]
-    if "." not in symbol and symbol not in us_tickers:
-        yahoo_symbol = symbol + ".NS"
-    else:
-        yahoo_symbol = symbol
 
-    try:
-        df = yf.download(yahoo_symbol, period="5y", progress=False)
-        if df is None or df.empty:
-            return None
-        return df
-    except:
-        return None
+    attempts = [symbol]
+
+    # If no suffix and not in US list, try NSE version
+    if "." not in symbol and symbol not in us_tickers:
+        attempts.append(symbol + ".NS")
+
+    # Try both options
+    for sym in attempts:
+        try:
+            df = yf.download(sym, period="5y", progress=False, auto_adjust=True)
+            if df is not None and not df.empty:
+                df["Symbol"] = sym
+                return df
+        except:
+            pass
+
+    return None
 
 # =========================
 # Slice Period Function
@@ -52,8 +58,8 @@ def slice_period(df, period):
 @st.cache_data
 def compute_indicators(df):
     df = df.copy()
-    df['MA20'] = df['Close'].rolling(20).mean()
-    df['MA50'] = df['Close'].rolling(50).mean()
+    df["MA20"] = df["Close"].rolling(20).mean()
+    df["MA50"] = df["Close"].rolling(50).mean()
 
     rsi = ta.momentum.RSIIndicator(df["Close"], window=14)
     df["RSI"] = rsi.rsi()
@@ -104,7 +110,9 @@ def plot_macd(df):
 # =========================
 st.markdown("## Stock Analysis Dashboard")
 
-ticker = st.text_input("Enter Stock Ticker (AAPL, TSLA, RELIANCE)", "").strip().upper()
+ticker = st.text_input(
+    "Enter Stock Ticker (Examples: AAPL, TSLA, RELIANCE, HDFCBANK)",
+    "").strip().upper()
 
 if not ticker:
     st.info("Enter a stock symbol to begin.")
@@ -125,7 +133,6 @@ df = compute_indicators(df)
 period = st.radio("Select Time Range:", ["1M", "6M", "1Y", "YTD", "MAX"], horizontal=True)
 df_period = slice_period(df, period)
 
-# Empty safety
 if df_period is None or df_period.empty:
     st.error("Data unavailable for selected period")
     st.stop()
