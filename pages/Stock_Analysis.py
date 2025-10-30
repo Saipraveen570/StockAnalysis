@@ -95,12 +95,17 @@ if df.empty:
     st.warning("Invalid ticker or no data available.")
     st.stop()
 
-latest = df["Close"].iloc[-1]
-prev = df["Close"].iloc[-2] if len(df) > 1 else latest
-daily_change = latest - prev
+# Ensure numeric values only
+latest = float(df["Close"].iloc[-1])
+prev = float(df["Close"].iloc[-2]) if len(df) > 1 else latest
+daily_change = float(latest - prev)
 
 c1, _, _ = st.columns(3)
-c1.metric("📈 Daily Close", round(latest, 2), round(daily_change, 2))
+c1.metric(
+    "📈 Daily Close",
+    f"{latest:.2f}",
+    f"{daily_change:.2f}"
+)
 
 df.index = df.index.astype(str).str[:10]
 st.write("🗂️ Last 10 Days Data")
