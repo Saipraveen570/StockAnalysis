@@ -91,20 +91,23 @@ with c2:
 # =====================================
 df = load_price_data(ticker, start_date, end_date)
 
-if df.empty:
+if df.empty or "Close" not in df.columns:
     st.warning("Invalid ticker or no data available.")
     st.stop()
 
-# Ensure numeric values only
-latest = float(df["Close"].iloc[-1])
-prev = float(df["Close"].iloc[-2]) if len(df) > 1 else latest
-daily_change = float(latest - prev)
+latest = df["Close"].iloc[-1]
+prev = df["Close"].iloc[-2] if len(df) > 1 else latest
+daily_change = latest - prev
+
+# Ensure pure Python floats (removes Series behavior)
+latest_val = float(latest.item() if hasattr(latest, "item") else latest)
+daily_val = float(daily_change.item() if hasattr(daily_change, "item") else daily_change)
 
 c1, _, _ = st.columns(3)
 c1.metric(
     "📈 Daily Close",
-    f"{latest:.2f}",
-    f"{daily_change:.2f}"
+    f"{latest_val:.2f}",
+    f"{daily_val:.2f}"
 )
 
 df.index = df.index.astype(str).str[:10]
