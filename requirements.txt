@@ -6,4 +6,4 @@ statsmodels==0.14.1
 plotly==5.19.0
 scikit-learn==1.4.2
 ta==0.10.2
-pandas_ta==0.3.14b
+git+https://github.com/twopirllc/pandas-ta.git
