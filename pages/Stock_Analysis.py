@@ -11,39 +11,58 @@ st.title("Stock Analysis")
 @st.cache_data(ttl=300)
 def safe_get_info(ticker):
     stock = yf.Ticker(ticker)
+
+    # Try fast_info first
+    info = {}
+    try:
+        fi = stock.fast_info
+        info.update({
+            "longName": fi.get("companyName", ticker),
+            "marketCap": fi.get("marketCap"),
+            "trailingPE": fi.get("trailingPE"),
+            "beta": fi.get("beta"),
+            "currency": fi.get("currency")
+        })
+    except Exception:
+        pass
+
+    # Try normal get_info with retries
     retries = 3
-    for _ in range(retries):
+    for delay in [1, 2, 4]:
         try:
-            return stock.get_info()
+            more = stock.get_info()
+            info.update(more)
+            return info
         except Exception:
-            time.sleep(1.5)
-    return {}
+            time.sleep(delay)
+
+    return info  # return whatever we got, might be partial
+
 
 @st.cache_data(ttl=300)
 def safe_download(ticker, start, end):
     try:
-        data = yf.download(ticker, start=start, end=end, progress=False)
-        if data is None or data.empty:
-            return pd.DataFrame()
-        return data
+        data = yf.download(ticker, start=start, end=end, progress=False, threads=False)
+        return data if data is not None and not data.empty else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
+
 
 @st.cache_data(ttl=300)
 def safe_history(ticker):
     stock = yf.Ticker(ticker)
-    retries = 3
-    for _ in range(retries):
+    for delay in [1, 2, 4]:
         try:
             data = stock.history(period="max")
             if not data.empty:
                 return data
         except Exception:
-            time.sleep(1.5)
+            time.sleep(delay)
     return pd.DataFrame()
 
-col1, col2, col3 = st.columns(3)
+
 today = datetime.date.today()
+col1, col2, col3 = st.columns(3)
 
 with col1:
     ticker = st.text_input("Stock Ticker", "AAPL").upper()
@@ -55,10 +74,10 @@ with col3:
 info = safe_get_info(ticker)
 
 if not info:
-    st.warning("Unable to fetch company info due to Yahoo Finance rate limits. Try again later.")
+    st.warning("Unable to fetch company info. Yahoo Finance API limit reached. Try again later.")
 else:
     st.subheader(info.get("longName", ticker))
-    st.write(info.get("longBusinessSummary", "Description unavailable"))
+    st.write(info.get("longBusinessSummary", "Company summary unavailable due to API limits."))
 
     stats1 = pd.DataFrame({
         "": ["Market Cap", "Beta", "EPS", "PE Ratio"],
@@ -88,7 +107,7 @@ else:
 data = safe_download(ticker, start_date, end_date)
 
 if data.empty:
-    st.error("Price data unavailable. Ticker may be incorrect or API temporarily blocked.")
+    st.error("Price data unavailable. Yahoo Finance might be blocking requests.")
 else:
     colA, colB, colC = st.columns(3)
     if len(data) > 1:
@@ -98,6 +117,7 @@ else:
     data.index = [str(i)[:10] for i in data.index]
     fig_tail = plotly_table(data.tail(10).sort_index(ascending=False).round(3))
     fig_tail.update_layout(height=220)
+
     st.write("##### Historical Data (Last 10 days)")
     st.plotly_chart(fig_tail, use_container_width=True)
 
@@ -119,7 +139,7 @@ indicators = col2.selectbox("", ["RSI","Moving Average","MACD"] if chart_type=="
 hist = safe_history(ticker)
 
 if hist.empty:
-    st.error("Unable to load full history (API limit reached). Try again later.")
+    st.error("Unable to load full price history. Try again later.")
 else:
     plot_period = period if period else "1y"
 
