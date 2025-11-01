@@ -1,6 +1,6 @@
 import plotly.graph_objects as go
 import dateutil
-import pandas_ta as pta
+import ta
 import datetime
 
 def plotly_table(dataframe):
@@ -39,158 +39,59 @@ def filter_data(dataframe, num_period):
     
     return dataframe.reset_index()[dataframe.reset_index()['Date']>date]
 
-
 def close_chart(dataframe, num_period =False):
     if num_period:
         dataframe = filter_data(dataframe,num_period)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Open'],
-                        mode='lines',
-                        name='Open',line = dict( width=2,color = '#5ab7ff')))
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Close'],
-                        mode='lines',
-                        name='Close',line = dict( width=2,color = 'black')))
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['High'],
-                        mode='lines', name='High',line = dict( width=2,color = '#0078ff')))
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Low'],
-                        mode='lines', name='Low',line = dict( width=2,color = 'red')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Open'], mode='lines', name='Open', line=dict(width=2,color='#5ab7ff')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Close'], mode='lines', name='Close', line=dict(width=2,color='black')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['High'], mode='lines', name='High', line=dict(width=2,color='#0078ff')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Low'], mode='lines', name='Low', line=dict(width=2,color='red')))
     fig.update_xaxes(rangeslider_visible=True)
-    fig.update_layout(height = 500,margin=dict(l=0, r=20, t=20, b=0), plot_bgcolor = 'white',paper_bgcolor = '#e1efff',legend=dict(
-    yanchor="top",
-    xanchor="right"
-    ))
+    fig.update_layout(height = 500,margin=dict(l=0, r=20, t=20, b=0), plot_bgcolor='white',paper_bgcolor='#e1efff',legend=dict(yanchor="top", xanchor="right"))
     return fig
 
 def candlestick(dataframe, num_period):
     dataframe = filter_data(dataframe,num_period)
     fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=dataframe['Date'],
-                    open=dataframe['Open'], high=dataframe['High'],
-                    low=dataframe['Low'], close=dataframe['Close']))
-
-    fig.update_layout(showlegend = False,height = 500,margin=dict(l=0, r=20, t=20, b=0), plot_bgcolor = 'white', paper_bgcolor = '#e1efff')
+    fig.add_trace(go.Candlestick(x=dataframe['Date'], open=dataframe['Open'], high=dataframe['High'], low=dataframe['Low'], close=dataframe['Close']))
+    fig.update_layout(showlegend=False,height=500,margin=dict(l=0, r=20, t=20, b=0), plot_bgcolor='white', paper_bgcolor='#e1efff')
     return fig
 
-    
 def RSI(dataframe, num_period):
-    dataframe['RSI'] = pta.rsi(dataframe['Close'])
+    dataframe['RSI'] = ta.momentum.RSIIndicator(dataframe['Close']).rsi()
     dataframe = filter_data(dataframe,num_period)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=dataframe['Date'],
-        y=dataframe.RSI, name = 'RSI',marker_color='orange',line = dict( width=2,color = 'orange'),
-    ))
-    fig.add_trace(go.Scatter(
-
-        x=dataframe['Date'],
-        y=[70]*len(dataframe), name = 'Overbought', marker_color='red',line = dict( width=2,color = 'red',dash='dash'),
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=dataframe['Date'],
-        y=[30]*len(dataframe),fill='tonexty', name = 'Oversold', marker_color='#79da84',line = dict( width=2,color = '#79da84',dash='dash'),
-    ))
-
-    fig.update_layout(yaxis_range=[0,100],
-        height=200,plot_bgcolor = 'white', paper_bgcolor = '#e1efff',margin=dict(l=0, r=0, t=0, b=0),legend=dict(orientation="h",
-    yanchor="top",
-    y=1.02,
-    xanchor="right",
-    x=1
-    )
-    )
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['RSI'], name='RSI', line=dict(width=2,color='orange')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=[70]*len(dataframe), name='Overbought', line=dict(width=2,color='red', dash='dash')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=[30]*len(dataframe), name='Oversold', line=dict(width=2,color='#79da84', dash='dash')))
+    fig.update_layout(yaxis_range=[0,100], height=200,plot_bgcolor='white',paper_bgcolor='#e1efff',margin=dict(l=0,r=0,t=0,b=0))
     return fig
 
 def Moving_average(dataframe,num_period):
-    
-    dataframe['SMA_50'] = pta.sma(dataframe['Close'],50) 
+    dataframe['SMA_50'] = ta.trend.SMAIndicator(dataframe['Close'],50).sma_indicator()
     dataframe = filter_data(dataframe,num_period)
     fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Open'],
-                        mode='lines',
-                        name='Open',line = dict( width=2,color = '#5ab7ff')))
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Close'],
-                        mode='lines',
-                        name='Close',line = dict( width=2,color = 'black')))
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['High'],
-                        mode='lines', name='High',line = dict( width=2,color = '#0078ff')))
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Low'],
-                        mode='lines', name='Low',line = dict( width=2,color = 'red')))
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['SMA_50'],
-                        mode='lines', name='SMA 50',line = dict( width=2,color = 'purple')))
-    
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Open'], mode='lines', name='Open', line=dict(width=2,color='#5ab7ff')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Close'], mode='lines', name='Close', line=dict(width=2,color='black')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['High'], mode='lines', name='High', line=dict(width=2,color='#0078ff')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['Low'], mode='lines', name='Low', line=dict(width=2,color='red')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['SMA_50'], mode='lines', name='SMA 50', line=dict(width=2,color='purple')))
     fig.update_xaxes(rangeslider_visible=True)
-    fig.update_layout(height = 500,margin=dict(l=0, r=20, t=20, b=0), plot_bgcolor = 'white',paper_bgcolor = '#e1efff',legend=dict(
-    yanchor="top",
-    xanchor="right"
-    ))
-    
-    return fig
-
-
-def Moving_average_candle_stick(dataframe,num_period):
-
-    dataframe['SMA_50'] = pta.sma(dataframe['Close'],50) 
-    dataframe = filter_data(dataframe,num_period)
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=dataframe.index,
-                    open=dataframe['Open'], high=dataframe['High'],
-                    low=dataframe['Low'], close=dataframe['Close']))
-
-    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['SMA_50'],
-                        mode='lines', name='SMA 50',line = dict( width=2,color = 'purple')))
-    fig.update_xaxes(rangeslider_visible=True)
-    fig.update_layout(height = 500,margin=dict(l=0, r=20, t=20, b=0), plot_bgcolor = 'white',paper_bgcolor = '#e1efff',legend=dict(
-    yanchor="top",
-    xanchor="right"
-    ))
-    
+    fig.update_layout(height = 500,margin=dict(l=0, r=20, t=20, b=0), plot_bgcolor='white',paper_bgcolor='#e1efff')
     return fig
 
 def MACD(dataframe, num_period):
-    macd = pta.macd(dataframe['Close']).iloc[:,0]
-    macd_signal = pta.macd(dataframe['Close']).iloc[:,1]
-    macd_hist = pta.macd(dataframe['Close']).iloc[:,2]
-    dataframe['MACD'] = macd
-    dataframe['MACD Signal'] = macd_signal
-    dataframe['MACD Hist'] = macd_hist
+    macd_calc = ta.trend.MACD(dataframe['Close'])
+    dataframe['MACD'] = macd_calc.macd()
+    dataframe['MACD Signal'] = macd_calc.macd_signal()
+    dataframe['MACD Hist'] = macd_calc.macd_diff()
     dataframe = filter_data(dataframe,num_period)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=dataframe['Date'],
-        y=dataframe['MACD'], name = 'RSI',marker_color='orange',line = dict( width=2,color = 'orange'),
-    ))
-    fig.add_trace(go.Scatter(
 
-        x=dataframe['Date'],
-        y=dataframe['MACD Signal'], name = 'Overbought', marker_color='red',line = dict( width=2,color = 'red',dash='dash'),
-    ))
-    c = ['red' if cl <0 else "green" for cl in macd_hist]
-    
-    fig.update_layout(
-        height=200,plot_bgcolor = 'white', paper_bgcolor = '#e1efff',margin=dict(l=0, r=0, t=0, b=0),legend=dict(orientation="h",
-    yanchor="top",
-    y=1.02,
-    xanchor="right",
-    x=1
-    )
-    )
-    return fig
-
-def Moving_average_forecast(forecast):
     fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(x=forecast.index[:-30], y=forecast['Close'].iloc[:-30],
-                        mode='lines',
-                        name='Close Price', line = dict( width=2,color = 'black')))
-    fig.add_trace(go.Scatter(x=forecast.index[-31:], y=forecast['Close'].iloc[-31:],
-                        mode='lines', name='Future Close Price',line = dict( width=2,color = 'red')))
-    
-    fig.update_xaxes(rangeslider_visible=True)
-    fig.update_layout(height = 500,margin=dict(l=0, r=20, t=20, b=0), plot_bgcolor = 'white',paper_bgcolor = '#e1efff',legend=dict(
-    yanchor="top",
-    xanchor="right"
-    ))
-    
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['MACD'], name='MACD', line=dict(width=2,color='orange')))
+    fig.add_trace(go.Scatter(x=dataframe['Date'], y=dataframe['MACD Signal'], name='Signal', line=dict(width=2,color='red', dash='dash')))
+    fig.add_trace(go.Bar(x=dataframe['Date'], y=dataframe['MACD Hist'], name='Histogram'))
+
+    fig.update_layout(height=200,plot_bgcolor='white',paper_bgcolor='#e1efff',margin=dict(l=0, r=0, t=0, b=0))
     return fig
