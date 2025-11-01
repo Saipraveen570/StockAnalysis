@@ -1,79 +1,19 @@
 import streamlit as st
 import pandas as pd
-import requests
 import datetime
 import time
 import plotly.graph_objects as go
 import yfinance as yf
+from alpha_vantage.timeseries import TimeSeries
 
 # ------------------- PAGE CONFIG -------------------
 st.set_page_config(page_title="📈 Stock Analysis", page_icon="📊", layout="wide")
 st.title("📈 Stock Market Analysis Dashboard")
 
 # ------------------- CONFIG -------------------
-ALPHA_VANTAGE_KEY = st.secrets.get("ALPHA_VANTAGE_KEY", None)
-ALPHA_URL = "https://www.alphavantage.co/query"
+st.markdown("Use this dashboard to analyze stock performance using Yahoo Finance & Alpha Vantage backup API.")
 
-if not ALPHA_VANTAGE_KEY:
-    st.warning("⚠️ Alpha Vantage API key not found in secrets. Please add it in Streamlit Cloud > Settings > Secrets.")
-
-# ------------------- FETCH FUNCTIONS -------------------
-@st.cache_data(ttl=600)
-def get_alpha_data(ticker):
-    """Primary source: Alpha Vantage"""
-    params = {
-        "function": "TIME_SERIES_DAILY_ADJUSTED",
-        "symbol": ticker,
-        "outputsize": "full",
-        "apikey": ALPHA_VANTAGE_KEY
-    }
-    for delay in [1, 2, 4, 8]:
-        try:
-            r = requests.get(ALPHA_URL, params=params, timeout=10)
-            if r.status_code == 200:
-                js = r.json()
-                if "Time Series (Daily)" in js:
-                    df = pd.DataFrame(js["Time Series (Daily)"]).T
-                    df = df.rename(columns={
-                        "1. open": "Open",
-                        "2. high": "High",
-                        "3. low": "Low",
-                        "4. close": "Close",
-                        "5. adjusted close": "Adj Close",
-                        "6. volume": "Volume"
-                    }).astype(float)
-                    df.index = pd.to_datetime(df.index)
-                    df.sort_index(inplace=True)
-                    return df
-            time.sleep(delay)
-        except Exception:
-            time.sleep(delay)
-    return pd.DataFrame()
-
-@st.cache_data(ttl=600)
-def get_yahoo_data(ticker, start_date, end_date):
-    """Backup source: Yahoo Finance"""
-    for delay in [1, 2, 4, 8]:
-        try:
-            data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-            if not data.empty:
-                return data
-        except Exception as e:
-            st.warning(f"Yahoo error: {e}. Retrying in {delay}s...")
-            time.sleep(delay)
-    return pd.DataFrame()
-
-@st.cache_data(ttl=600)
-def get_company_info(ticker):
-    """Try fetching company info (may fail if Yahoo rate-limited)"""
-    try:
-        stock = yf.Ticker(ticker)
-        info = stock.get_info()
-        return info or {}
-    except Exception:
-        return {}
-
-# ------------------- USER INPUTS -------------------
+# ------------------- INPUTS -------------------
 today = datetime.date.today()
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -83,35 +23,57 @@ with col2:
 with col3:
     end_date = st.date_input("End Date", today)
 
-# ------------------- COMPANY INFO -------------------
-info = get_company_info(ticker)
-if info:
-    st.subheader(info.get("longName", ticker))
-    st.write(info.get("longBusinessSummary", "Summary unavailable."))
-else:
-    st.info("ℹ️ Company info unavailable (Yahoo rate-limited).")
-
-# ------------------- FETCH STOCK DATA -------------------
+# ------------------- FETCH DATA -------------------
 st.markdown("⏳ Fetching stock data...")
 
-data = pd.DataFrame()
-data_source = None
+@st.cache_data(ttl=600)
+def fetch_yahoo_data(ticker, start_date, end_date):
+    """Try fetching data from Yahoo Finance"""
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        return data
+    except Exception as e:
+        st.warning(f"Yahoo Finance failed: {e}")
+        return pd.DataFrame()
 
-# 1️⃣ Try Alpha Vantage first
-if ALPHA_VANTAGE_KEY:
-    data = get_alpha_data(ticker)
-    if not data.empty:
-        data_source = "Alpha Vantage"
+@st.cache_data(ttl=600)
+def fetch_alpha_data(ticker):
+    """Fallback: Fetch data from Alpha Vantage"""
+    try:
+        # ✅ Securely get API key from Streamlit secrets
+        ALPHA_KEY = st.secrets["general"]["ALPHA_VANTAGE_KEY"]
 
-# 2️⃣ Fallback: Yahoo Finance
+        ts = TimeSeries(key=ALPHA_KEY, output_format="pandas")
+        data, _ = ts.get_daily(symbol=ticker, outputsize="full")
+
+        # Rename columns to match Yahoo style
+        data = data.rename(
+            columns={
+                "1. open": "Open",
+                "2. high": "High",
+                "3. low": "Low",
+                "4. close": "Close",
+                "5. volume": "Volume",
+            }
+        )
+        data.index = pd.to_datetime(data.index)
+        data.sort_index(inplace=True)
+        return data
+    except Exception as e:
+        st.error(f"Alpha Vantage failed: {e}")
+        return pd.DataFrame()
+
+# Fetch from Yahoo first
+data = fetch_yahoo_data(ticker, start_date, end_date)
+
+# If Yahoo fails, try Alpha
 if data.empty:
-    st.warning("⚠️ Alpha Vantage unavailable or limit reached. Trying Yahoo Finance...")
-    data = get_yahoo_data(ticker, start_date, end_date)
-    if not data.empty:
-        data_source = "Yahoo Finance"
+    st.warning("⚠️ Yahoo Finance failed. Trying Alpha Vantage...")
+    data = fetch_alpha_data(ticker)
 
+# Stop if no data from both
 if data.empty:
-    st.error("❌ Failed to fetch data from both Alpha Vantage and Yahoo Finance. Please try again later.")
+    st.error("❌ Failed to fetch data from both Yahoo and Alpha Vantage. Please check symbol or API key.")
     st.stop()
 
 # ------------------- FILTER -------------------
@@ -133,7 +95,7 @@ data["MACD"] = exp1 - exp2
 data["Signal"] = data["MACD"].ewm(span=9, adjust=False).mean()
 
 # ------------------- PRICE CHART -------------------
-st.markdown(f"### 💹 Price Chart with Moving Averages ({data_source})")
+st.markdown("### 💹 Price Chart with Moving Averages")
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=data.index, y=data["Close"], name="Close", line=dict(color="blue")))
 fig.add_trace(go.Scatter(x=data.index, y=data["MA20"], name="MA20", line=dict(color="orange", dash="dot")))
