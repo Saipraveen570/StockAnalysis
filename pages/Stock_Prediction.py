@@ -3,11 +3,9 @@ import pandas as pd
 import yfinance as yf
 import datetime as dt
 from sklearn.linear_model import LinearRegression
-import sys, os
 
-# ✅ Fix import path for Streamlit Cloud
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.plotly_figure import candlestick, RSI, Moving_average, MACD
+# ✅ Correct import for Streamlit Cloud
+from pages.utils.plotly_figure import candlestick, RSI, Moving_average, MACD
 
 # ------------------- PAGE CONFIG -------------------
 st.set_page_config(page_title="🤖 Stock Price Prediction", layout="wide")
