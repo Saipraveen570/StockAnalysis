@@ -1,8 +1,12 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from model_train import get_data, train_model, save_model, load_model, forecast
+from pages.utils.model_train import (
+    get_data,
+    train_model,
+    load_model,
+    save_model,
+    forecast
+)
 
 st.set_page_config(page_title="Stock Prediction", page_icon="📈", layout="wide")
 
