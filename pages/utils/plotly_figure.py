@@ -1,99 +1,74 @@
-import plotly.graph_objs as go
+import plotly.graph_objects as go
 import pandas as pd
-import ta
+import numpy as np
 
-# ==========================
-# TABLE DISPLAY
-# ==========================
-def plotly_table(df):
-    fig = go.Figure(data=[go.Table(
-        header=dict(values=list(df.columns), align="left"),
-        cells=dict(values=[df[col] for col in df.columns], align="left")
-    )])
-    fig.update_layout(height=300)
+# ------------------ 1️⃣ CANDLESTICK CHART ------------------
+def candlestick(data: pd.DataFrame):
+    """Create a candlestick chart."""
+    fig = go.Figure(
+        data=[
+            go.Candlestick(
+                x=data.index,
+                open=data['Open'],
+                high=data['High'],
+                low=data['Low'],
+                close=data['Close'],
+                name='Price'
+            )
+        ]
+    )
+    fig.update_layout(
+        title="📊 Candlestick Chart",
+        yaxis_title="Price (USD)",
+        xaxis_title="Date",
+        template="plotly_dark",
+        height=500
+    )
     return fig
 
-# ==========================
-# LINE CLOSE CHART
-# ==========================
-def close_chart(df, period="1y"):
-    df = _filter_period(df, period)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name="Close"))
-    fig.update_layout(height=400, title=f"Closing Price ({period})")
-    return fig
-
-# ==========================
-# CANDLE CHART
-# ==========================
-def candlestick(df, period="1y"):
-    df = _filter_period(df, period)
-    fig = go.Figure(data=[go.Candlestick(
-        x=df.index,
-        open=df['Open'], high=df['High'], low=df['Low'], close=df['Close']
-    )])
-    fig.update_layout(height=500, title=f"Candlestick Chart ({period})")
-    return fig
-
-# ==========================
-# MOVING AVERAGE CHART
-# ==========================
-def Moving_average(df, period="1y"):
-    df = _filter_period(df, period)
-    df["MA20"] = df["Close"].rolling(20).mean()
-    df["MA50"] = df["Close"].rolling(50).mean()
+# ------------------ 2️⃣ RELATIVE STRENGTH INDEX (RSI) ------------------
+def RSI(data: pd.DataFrame, period: int = 14):
+    """Compute and plot the Relative Strength Index."""
+    delta = data['Close'].diff()
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    avg_gain = pd.Series(gain).rolling(window=period).mean()
+    avg_loss = pd.Series(loss).rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name="Close"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA20"], mode="lines", name="MA20"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MA50"], mode="lines", name="MA50"))
-    fig.update_layout(height=450, title=f"Moving Averages ({period})")
+    fig.add_trace(go.Scatter(x=data.index, y=rsi, mode='lines', name='RSI', line=dict(color='cyan')))
+    fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
+    fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
+    fig.update_layout(title="💪 RSI Indicator", yaxis_title="RSI", template="plotly_dark", height=400)
     return fig
 
-# ==========================
-# RSI INDICATOR
-# ==========================
-def RSI(df, period="1y"):
-    df = _filter_period(df, period)
-    df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
+# ------------------ 3️⃣ MOVING AVERAGES ------------------
+def Moving_average(data: pd.DataFrame, short_window: int = 20, long_window: int = 50):
+    """Plot short-term and long-term moving averages."""
+    data['MA_Short'] = data['Close'].rolling(window=short_window).mean()
+    data['MA_Long'] = data['Close'].rolling(window=long_window).mean()
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], mode="lines", name="RSI"))
-    fig.update_layout(height=300, title=f"RSI ({period})", yaxis=dict(range=[0,100]))
+    fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price', line=dict(color='lightgray')))
+    fig.add_trace(go.Scatter(x=data.index, y=data['MA_Short'], mode='lines', name=f'{short_window}-Day MA', line=dict(color='yellow')))
+    fig.add_trace(go.Scatter(x=data.index, y=data['MA_Long'], mode='lines', name=f'{long_window}-Day MA', line=dict(color='orange')))
+    fig.update_layout(title="📈 Moving Average Chart", yaxis_title="Price (USD)", template="plotly_dark", height=450)
     return fig
 
-# ==========================
-# MACD INDICATOR
-# ==========================
-def MACD(df, period="1y"):
-    df = _filter_period(df, period)
-    macd = ta.trend.MACD(df["Close"])
-    df["MACD"] = macd.macd()
-    df["MACD_signal"] = macd.macd_signal()
+# ------------------ 4️⃣ MACD (Moving Average Convergence Divergence) ------------------
+def MACD(data: pd.DataFrame, short_window: int = 12, long_window: int = 26, signal_window: int = 9):
+    """Plot MACD line, signal line, and histogram."""
+    exp1 = data['Close'].ewm(span=short_window, adjust=False).mean()
+    exp2 = data['Close'].ewm(span=long_window, adjust=False).mean()
+    macd_line = exp1 - exp2
+    signal_line = macd_line.ewm(span=signal_window, adjust=False).mean()
+    hist = macd_line - signal_line
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], mode="lines", name="MACD"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], mode="lines", name="Signal"))
-    fig.update_layout(height=300, title=f"MACD ({period})")
+    fig.add_trace(go.Scatter(x=data.index, y=macd_line, mode='lines', name='MACD Line', line=dict(color='cyan')))
+    fig.add_trace(go.Scatter(x=data.index, y=signal_line, mode='lines', name='Signal Line', line=dict(color='orange')))
+    fig.add_trace(go.Bar(x=data.index, y=hist, name='Histogram', marker_color='gray'))
+    fig.update_layout(title="📊 MACD Indicator", yaxis_title="MACD", template="plotly_dark", height=450)
     return fig
-
-# ==========================
-# MOVING AVERAGE FORECAST PLOT (for Prediction page)
-# ==========================
-def Moving_average_forecast(df):
-    fig = go.Figure()
-    if "Close" in df:    
-        fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name="Actual"))
-    if "Predicted" in df:
-        fig.add_trace(go.Scatter(x=df.index, y=df["Predicted"], mode="lines", name="Predicted"))
-    fig.update_layout(height=450, title="Forecast vs Actual")
-    return fig
-
-# ==========================
-# HELPER FUNCTION: FILTER PERIOD
-# ==========================
-def _filter_period(df, period):
-    if isinstance(df.index, pd.DatetimeIndex):
-        if period != "max":
-            df = df.last(period)
-    return df
