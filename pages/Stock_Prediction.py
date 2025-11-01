@@ -5,6 +5,10 @@ from alpha_vantage.timeseries import TimeSeries
 from sklearn.linear_model import LinearRegression
 from datetime import datetime, timedelta
 import os
+from dotenv import load_dotenv
+
+# ✅ Load environment variables (works locally)
+load_dotenv()
 
 # ✅ Correct import path for your folder structure
 from pages.utils.plotly_figure import candlestick, RSI, Moving_average, MACD
@@ -13,17 +17,17 @@ from pages.utils.plotly_figure import candlestick, RSI, Moving_average, MACD
 st.set_page_config(page_title="🤖 Stock Price Prediction", layout="wide")
 st.title("🤖 Stock Price Prediction Dashboard")
 
-# ------------------- USER INPUTS -------------------
+# ------------------- SIDEBAR INPUTS -------------------
 st.sidebar.header("⚙️ Settings")
 
-source = st.sidebar.selectbox("Select Data Source", ["Yahoo Finance", "Alpha Vantage"])
+data_source = st.sidebar.selectbox("Select Data Source", ["Yahoo Finance", "Alpha Vantage"])
 ticker = st.sidebar.text_input("Enter Stock Symbol (e.g. AAPL, TSLA, INFY.NS)", "AAPL")
 
 today = datetime.today()
 start_date = st.sidebar.date_input("Start Date", today - timedelta(days=365))
 end_date = st.sidebar.date_input("End Date", today)
 
-# ------------------- DATA FETCH FUNCTION -------------------
+# ------------------- FETCH FUNCTION -------------------
 @st.cache_data(show_spinner=True)
 def fetch_stock_data(ticker, start, end, source):
     """Fetch stock data from Yahoo Finance or Alpha Vantage."""
@@ -34,20 +38,28 @@ def fetch_stock_data(ticker, start, end, source):
             return df
 
         elif source == "Alpha Vantage":
-            api_key = st.secrets.get("ALPHA_VANTAGE_API_KEY") or os.getenv("ALPHA_VANTAGE_API_KEY")
+            api_key = (
+                st.secrets.get("ALPHA_VANTAGE_API_KEY")
+                if "ALPHA_VANTAGE_API_KEY" in st.secrets
+                else os.getenv("ALPHA_VANTAGE_API_KEY")
+            )
+
             if not api_key:
-                st.warning("⚠️ Alpha Vantage API key not found. Please add it to Streamlit secrets.")
+                st.warning("⚠️ Alpha Vantage API key not found. Please set it in Streamlit Secrets or .env file.")
                 return pd.DataFrame()
 
             ts = TimeSeries(key=api_key, output_format="pandas")
             data, _ = ts.get_daily(symbol=ticker, outputsize="full")
-            data.rename(columns={
-                '1. open': 'Open',
-                '2. high': 'High',
-                '3. low': 'Low',
-                '4. close': 'Close',
-                '5. volume': 'Volume'
-            }, inplace=True)
+            data.rename(
+                columns={
+                    "1. open": "Open",
+                    "2. high": "High",
+                    "3. low": "Low",
+                    "4. close": "Close",
+                    "5. volume": "Volume",
+                },
+                inplace=True,
+            )
             data.index = pd.to_datetime(data.index)
             data = data.sort_index()
             return data.loc[str(start):str(end)]
@@ -58,13 +70,13 @@ def fetch_stock_data(ticker, start, end, source):
 
 # ------------------- LOAD DATA -------------------
 st.info("⏳ Fetching data...")
-data = fetch_stock_data(ticker, start_date, end_date, source)
+data = fetch_stock_data(ticker, start_date, end_date, data_source)
 
 if data.empty:
-    st.error("⚠️ No data fetched. Please enter a valid symbol or check API key.")
+    st.error("⚠️ No data fetched. Please check your symbol or API key.")
     st.stop()
 
-# ------------------- DISPLAY CHARTS -------------------
+# ------------------- DISPLAY DATA -------------------
 st.subheader(f"📊 Historical Data for {ticker}")
 st.dataframe(data.tail(10), use_container_width=True)
 
@@ -82,7 +94,7 @@ with tab3:
 with tab4:
     st.plotly_chart(MACD(data), use_container_width=True)
 
-# ------------------- PRICE PREDICTION -------------------
+# ------------------- LINEAR REGRESSION FORECAST -------------------
 st.divider()
 st.subheader("📅 30-Day Linear Regression Forecast")
 
@@ -94,9 +106,7 @@ model = LinearRegression()
 model.fit(X, y)
 
 future_days = 30
-future = pd.DataFrame({
-    "Days": range(data["Days"].max() + 1, data["Days"].max() + 1 + future_days)
-})
+future = pd.DataFrame({"Days": range(data["Days"].max() + 1, data["Days"].max() + 1 + future_days)})
 future["Predicted_Price"] = model.predict(future[["Days"]])
 
 # ------------------- VISUALIZATION -------------------
