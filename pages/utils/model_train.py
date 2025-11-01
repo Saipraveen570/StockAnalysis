@@ -1,65 +1,96 @@
 import yfinance as yf
-import numpy as np
 import pandas as pd
-import time
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-from sklearn.preprocessing import MinMaxScaler
+import numpy as np
+import joblib
 import streamlit as st
+import time
+from sklearn.preprocessing import MinMaxScaler
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-# ------------------ DATA FETCH ------------------ #
-@st.cache_data(show_spinner=False, ttl=300)
+# ===============================
+# DATA FETCH
+# ===============================
+
+@st.cache_data(ttl=300, show_spinner=False)
 def get_data(ticker):
-    retries = 4
-    for _ in range(retries):
+    retries = 3
+    for r in range(retries):
         try:
-            df = yf.download(ticker, period="5y", auto_adjust=True, progress=False, threads=False)
+            df = yf.download(ticker, period="5y", progress=False, threads=False)
             if not df.empty:
-                return df[["Close"]]
+                return df
         except Exception:
             time.sleep(2)
     return pd.DataFrame()
 
-# ------------------ TRANSFORM FUNCTIONS ------------------ #
-def get_rolling_mean(close_df, window=3):
-    return close_df["Close"].rolling(window=window).mean().dropna().to_frame()
+# ===============================
+# SCALING
+# ===============================
 
-def get_differencing_order(series):
-    # Fallback safe differencing
-    return 1
-
-def scaling(series):
+def scale_data(series):
     scaler = MinMaxScaler()
-    scaled = scaler.fit_transform(series.values.reshape(-1,1))
+    scaled = scaler.fit_transform(series.values.reshape(-1, 1))
     return scaled, scaler
 
-def inverse_scaling(scaler, arr):
-    return scaler.inverse_transform(np.array(arr).reshape(-1,1))
+def inverse_scale(scaled_values, scaler):
+    return scaler.inverse_transform(scaled_values.reshape(-1, 1)).flatten()
 
-# ------------------ MODEL ------------------ #
+# ===============================
+# TRAIN MODEL
+# ===============================
+
+@st.cache_resource(show_spinner=False)
 def train_model(data):
-    model = SARIMAX(data, order=(1,1,1), seasonal_order=(1,1,1,12), enforce_stationarity=False, enforce_invertibility=False)
-    results = model.fit(disp=False)
-    return results
+    close_px = data['Close'].dropna()
+    scaled, scaler = scale_data(close_px)
 
-def evaluate_model(data, d_order):
+    model = SARIMAX(
+        scaled,
+        order=(1, 1, 1),
+        seasonal_order=(1, 1, 1, 12),
+        enforce_stationarity=False,
+        enforce_invertibility=False
+    )
+    
+    # Suppress optimizer warnings & increase stability
     try:
-        model = SARIMAX(data, order=(1, d_order, 1), seasonal_order=(1,1,1,12),
-                         enforce_stationarity=False, enforce_invertibility=False)
-        results = model.fit(disp=False)
-        fitted_vals = results.fittedvalues
-        rmse = np.sqrt(np.mean((data[d_order:] - fitted_vals[d_order:])**2))
-        return round(float(rmse), 4)
+        fitted = model.fit(disp=False, maxiter=200)
     except Exception:
-        return None
+        fitted = model.fit(disp=False, method="powell", maxiter=200)
 
-def get_forecast(data, d_order, steps=30):
+    return fitted, scaler
+
+# ===============================
+# SAVE MODEL
+# ===============================
+
+def save_model(model, scaler, ticker):
     try:
-        model = SARIMAX(data, order=(1, d_order, 1), seasonal_order=(1,1,1,12),
-                         enforce_stationarity=False, enforce_invertibility=False)
-        results = model.fit(disp=False)
-        forecast_scaled = results.forecast(steps)
-        idx = pd.date_range(start=pd.Timestamp.today(), periods=steps, freq='B')
-        forecast_df = pd.DataFrame({"Close": forecast_scaled}, index=idx)
-        return forecast_df
+        joblib.dump(model, f"{ticker}_model.pkl")
+        joblib.dump(scaler, f"{ticker}_scaler.pkl")
     except Exception:
-        return pd.DataFrame()
+        pass  # Streamlit Cloud safe fail
+
+# ===============================
+# LOAD MODEL
+# ===============================
+
+def load_model(ticker):
+    try:
+        model = joblib.load(f"{ticker}_model.pkl")
+        scaler = joblib.load(f"{ticker}_scaler.pkl")
+        return model, scaler
+    except Exception:
+        return None, None
+
+# ===============================
+# FORECAST
+# ===============================
+
+def forecast(model, scaler, steps=30):
+    try:
+        pred_scaled = model.forecast(steps=steps)
+        pred = inverse_scale(pred_scaled, scaler)
+        return pred
+    except Exception:
+        return np.array([])
