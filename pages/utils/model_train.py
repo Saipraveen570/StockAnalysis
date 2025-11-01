@@ -4,50 +4,62 @@ import pandas as pd
 import time
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.preprocessing import MinMaxScaler
-import joblib
 import streamlit as st
 
-@st.cache_data(show_spinner=False)
+# ------------------ DATA FETCH ------------------ #
+@st.cache_data(show_spinner=False, ttl=300)
 def get_data(ticker):
-    retries = 5
-    for i in range(retries):
+    retries = 4
+    for _ in range(retries):
         try:
-            df = yf.download(ticker, period="5y", progress=False, threads=False)
+            df = yf.download(ticker, period="5y", auto_adjust=True, progress=False, threads=False)
             if not df.empty:
-                return df
+                return df[["Close"]]
         except Exception:
             time.sleep(2)
-    st.error(f"⚠️ Unable to fetch data for {ticker}. Try again later.")
     return pd.DataFrame()
+
+# ------------------ TRANSFORM FUNCTIONS ------------------ #
+def get_rolling_mean(close_df, window=3):
+    return close_df["Close"].rolling(window=window).mean().dropna().to_frame()
+
+def get_differencing_order(series):
+    # Fallback safe differencing
+    return 1
 
 def scaling(series):
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(series.values.reshape(-1,1))
     return scaled, scaler
 
-def inverse_scaling(scaled, scaler):
-    return scaler.inverse_transform(scaled)
+def inverse_scaling(scaler, arr):
+    return scaler.inverse_transform(np.array(arr).reshape(-1,1))
 
+# ------------------ MODEL ------------------ #
 def train_model(data):
-    close_data = data["Close"]
-    scaled, scaler = scaling(close_data)
-    model = SARIMAX(scaled, order=(1,1,1), seasonal_order=(1,1,1,12))
+    model = SARIMAX(data, order=(1,1,1), seasonal_order=(1,1,1,12), enforce_stationarity=False, enforce_invertibility=False)
     results = model.fit(disp=False)
-    return results, scaler
+    return results
 
-def save_model(model, scaler, ticker):
-    joblib.dump(model, f"{ticker}_model.pkl")
-    joblib.dump(scaler, f"{ticker}_scaler.pkl")
-
-def load_model(ticker):
+def evaluate_model(data, d_order):
     try:
-        model = joblib.load(f"{ticker}_model.pkl")
-        scaler = joblib.load(f"{ticker}_scaler.pkl")
-        return model, scaler
-    except:
-        return None, None
+        model = SARIMAX(data, order=(1, d_order, 1), seasonal_order=(1,1,1,12),
+                         enforce_stationarity=False, enforce_invertibility=False)
+        results = model.fit(disp=False)
+        fitted_vals = results.fittedvalues
+        rmse = np.sqrt(np.mean((data[d_order:] - fitted_vals[d_order:])**2))
+        return round(float(rmse), 4)
+    except Exception:
+        return None
 
-def forecast(model, scaler, steps=30):
-    pred_scaled = model.forecast(steps=steps)
-    pred = inverse_scaling(pred_scaled.reshape(-1,1), scaler).flatten()
-    return pred
+def get_forecast(data, d_order, steps=30):
+    try:
+        model = SARIMAX(data, order=(1, d_order, 1), seasonal_order=(1,1,1,12),
+                         enforce_stationarity=False, enforce_invertibility=False)
+        results = model.fit(disp=False)
+        forecast_scaled = results.forecast(steps)
+        idx = pd.date_range(start=pd.Timestamp.today(), periods=steps, freq='B')
+        forecast_df = pd.DataFrame({"Close": forecast_scaled}, index=idx)
+        return forecast_df
+    except Exception:
+        return pd.DataFrame()
