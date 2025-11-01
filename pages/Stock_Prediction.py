@@ -5,11 +5,9 @@ from alpha_vantage.timeseries import TimeSeries
 from sklearn.linear_model import LinearRegression
 from datetime import datetime, timedelta
 import os
-import sys
 
-# ✅ Fix import path for Streamlit Cloud
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.plotly_figure import candlestick, RSI, Moving_average, MACD
+# ✅ Correct import path for your folder structure
+from pages.utils.plotly_figure import candlestick, RSI, Moving_average, MACD
 
 # ------------------- PAGE CONFIG -------------------
 st.set_page_config(page_title="🤖 Stock Price Prediction", layout="wide")
