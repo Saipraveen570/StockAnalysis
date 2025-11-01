@@ -1,133 +1,68 @@
-import numpy as np
-import pandas as pd
 import yfinance as yf
+import matplotlib.pyplot as plt
 from statsmodels.tsa.stattools import adfuller
+from sklearn.metrics import mean_squared_error, r2_score
 from statsmodels.tsa.arima.model import ARIMA
-from sklearn.metrics import mean_squared_error
-from sklearn.preprocessing import MinMaxScaler
-import warnings
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from datetime import datetime, timedelta
+import pandas as pd 
 
-warnings.filterwarnings("ignore")
+def get_data(ticker):
+    stock_data = yf.download(ticker, start='2024-01-01')
+    return stock_data[['Close']]
 
-# -------------------------------------------------------
-# Helpers
-# -------------------------------------------------------
-def safe_ticker_symbol(t: str) -> str:
-    if not t:
-        return ""
-    t = t.strip().upper()
-    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
-    if len(t) > 12 or any(ch not in allowed for ch in t):
-        return ""
-    return t
+def stationary_check(close_price):
+    adf_test = adfuller(close_price)
+    p_value = round(adf_test[1],3)
+    return p_value
 
-# -------------------------------------------------------
-# Data loader
-# -------------------------------------------------------
-def get_data(ticker: str) -> pd.Series:
-    ticker = safe_ticker_symbol(ticker)
-    if not ticker:
-        return pd.Series(dtype=float)
+def get_rolling_mean(close_price):
+    rolling_price = close_price.rolling(window=7).mean().dropna()
+    return rolling_price
+    
+def get_differencing_order(close_price):
+    
+    p_value = stationary_check(close_price)
+    d = 0
+    while True:
+        if p_value > 0.05:
+            d += 1
+            close_price = close_price.diff().dropna()
+            p_value = stationary_check(close_price)
+        else:
+            break
+    return d
 
-    try:
-        data = yf.download(ticker, period="5y", progress=False)
-        if "Close" not in data.columns:
-            return pd.Series(dtype=float)
+def fit_model(data, differencing_order):
+    model = ARIMA(data, order=(30,differencing_order,30))
+    model_fit = model.fit()
 
-        close_price = data["Close"].dropna()
-        return close_price
-    except Exception:
-        return pd.Series(dtype=float)
+    forecast_steps = 30
+    forecast = model_fit.get_forecast(steps=forecast_steps)
 
-# -------------------------------------------------------
-# Rolling Mean
-# -------------------------------------------------------
-def get_rolling_mean(series: pd.Series, window: int = 7) -> pd.DataFrame:
-    if series.empty or len(series) < window:
-        return pd.DataFrame(columns=["Close"])
+    predictions = forecast.predicted_mean
+    return predictions
+    
+def evaluate_model(original_price, differencing_order):
+    train_data, test_data = original_price[:-30], original_price[-30:]
+    predictions = fit_model(train_data,differencing_order)
+    rmse = np.sqrt(mean_squared_error(test_data, predictions))
+    return round(rmse,2)
 
-    df = pd.DataFrame(series)
-    df["Close"] = df["Close"].rolling(window).mean()
-    df.dropna(inplace=True)
-    return df
+def scaling(close_price):
+    scaler = StandardScaler()
+    scaled_data = scaler.fit_transform(np.array(close_price).reshape(-1,1))
+    return scaled_data, scaler
 
-# -------------------------------------------------------
-# Differencing Order (ADF)
-# -------------------------------------------------------
-def get_differencing_order(df: pd.DataFrame) -> int:
-    if df.empty or "Close" not in df.columns:
-        return 1
+def get_forecast(original_price, differencing_order):
+    predictions = fit_model(original_price, differencing_order)
+    start_date = datetime.now().strftime('%Y-%m-%d')
+    end_date = (datetime.now() + timedelta(days = 29)).strftime('%Y-%m-%d')
+    forecast_index = pd.date_range(start=start_date, end=end_date, freq='D')
+    forecast_df = pd.DataFrame(predictions, index = forecast_index, columns = ['Close'])
+    return forecast_df
 
-    data = df["Close"].dropna().values
-    if len(data) < 20:
-        return 1
-
-    try:
-        pvalue = adfuller(data)[1]
-        return 0 if pvalue <= 0.05 else 1
-    except Exception:
-        return 1
-
-# -------------------------------------------------------
-# Scaling
-# -------------------------------------------------------
-def scaling(df: pd.DataFrame):
-    if df.empty or "Close" not in df.columns:
-        return (pd.DataFrame(columns=["Close"]), MinMaxScaler())
-
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    try:
-        scaled = scaler.fit_transform(df[["Close"]])
-        df_scaled = pd.DataFrame(scaled, index=df.index, columns=["Close"])
-        return df_scaled, scaler
-    except Exception:
-        return (pd.DataFrame(columns=["Close"]), MinMaxScaler())
-
-# -------------------------------------------------------
-# Model Evaluation (RMSE)
-# -------------------------------------------------------
-def evaluate_model(scaled_data, d_order: int):
-    try:
-        if scaled_data.empty or len(scaled_data) < 30:
-            return np.nan
-
-        train_size = int(len(scaled_data) * 0.8)
-        train, test = scaled_data[:train_size], scaled_data[train_size:]
-
-        model = ARIMA(train, order=(2, d_order, 2))
-        model_fit = model.fit()
-
-        preds = model_fit.forecast(steps=len(test))
-        rmse = np.sqrt(mean_squared_error(test, preds))
-        return rmse
-    except Exception:
-        return np.nan
-
-# -------------------------------------------------------
-# Forecast
-# -------------------------------------------------------
-def get_forecast(scaled_data, d_order: int, steps: int = 30) -> pd.DataFrame:
-    if scaled_data.empty:
-        return pd.DataFrame(columns=["Close"])
-
-    try:
-        model = ARIMA(scaled_data, order=(2, d_order, 2))
-        model_fit = model.fit()
-        forecast = model_fit.forecast(steps=steps)
-        future_index = pd.date_range(start=scaled_data.index[-1], periods=steps+1, freq="D")[1:]
-        return pd.DataFrame(forecast, index=future_index, columns=["Close"])
-    except Exception:
-        # Return flat forecast fallback
-        last_val = float(scaled_data["Close"].iloc[-1]) if not scaled_data.empty else 0
-        future_index = pd.date_range(start=pd.Timestamp.today(), periods=steps, freq="D")
-        return pd.DataFrame([last_val]*steps, index=future_index, columns=["Close"])
-
-# -------------------------------------------------------
-# Inverse Scale
-# -------------------------------------------------------
-def inverse_scaling(scaler, values):
-    try:
-        arr = np.array(values).reshape(-1, 1)
-        return scaler.inverse_transform(arr).flatten()
-    except Exception:
-        return values
+def inverse_scaling(scaler, scaled_data):
+    close_price = scaler.inverse_transform(np.array(scaled_data).reshape(-1,1))
+    return close_price
