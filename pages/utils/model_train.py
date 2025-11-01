@@ -1,96 +1,82 @@
 import yfinance as yf
-import pandas as pd
 import numpy as np
+import pandas as pd
+import time
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.preprocessing import MinMaxScaler
 import joblib
 import streamlit as st
-import time
-from sklearn.preprocessing import MinMaxScaler
-from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-# ===============================
-# DATA FETCH
-# ===============================
-
-@st.cache_data(ttl=300, show_spinner=False)
+# -----------------------------------------------------------
+# Fetch Stock Data (Cached)
+# -----------------------------------------------------------
+@st.cache_data(show_spinner=True)
 def get_data(ticker):
-    retries = 3
-    for r in range(retries):
+    retries = 5
+    for _ in range(retries):
         try:
             df = yf.download(ticker, period="5y", progress=False, threads=False)
             if not df.empty:
                 return df
-        except Exception:
-            time.sleep(2)
+        except:
+            time.sleep(1)
     return pd.DataFrame()
 
-# ===============================
-# SCALING
-# ===============================
-
+# -----------------------------------------------------------
+# Scaling Functions
+# -----------------------------------------------------------
 def scale_data(series):
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(series.values.reshape(-1, 1))
     return scaled, scaler
 
-def inverse_scale(scaled_values, scaler):
-    return scaler.inverse_transform(scaled_values.reshape(-1, 1)).flatten()
+def inverse_scale(scaled, scaler):
+    return scaler.inverse_transform(scaled)
 
-# ===============================
-# TRAIN MODEL
-# ===============================
+# -----------------------------------------------------------
+# Train SARIMAX Model
+# -----------------------------------------------------------
+def train_model(df):
+    if df.empty or "Close" not in df.columns:
+        return None, None
 
-@st.cache_resource(show_spinner=False)
-def train_model(data):
-    close_px = data['Close'].dropna()
-    scaled, scaler = scale_data(close_px)
+    close_prices = df["Close"]
+    scaled_data, scaler = scale_data(close_prices)
 
+    # Model configuration
     model = SARIMAX(
-        scaled,
+        scaled_data,
         order=(1, 1, 1),
         seasonal_order=(1, 1, 1, 12),
         enforce_stationarity=False,
         enforce_invertibility=False
     )
-    
-    # Suppress optimizer warnings & increase stability
-    try:
-        fitted = model.fit(disp=False, maxiter=200)
-    except Exception:
-        fitted = model.fit(disp=False, method="powell", maxiter=200)
 
-    return fitted, scaler
+    results = model.fit(disp=False)
+    return results, scaler
 
-# ===============================
-# SAVE MODEL
-# ===============================
-
+# -----------------------------------------------------------
+# Save & Load Model
+# -----------------------------------------------------------
 def save_model(model, scaler, ticker):
-    try:
-        joblib.dump(model, f"{ticker}_model.pkl")
-        joblib.dump(scaler, f"{ticker}_scaler.pkl")
-    except Exception:
-        pass  # Streamlit Cloud safe fail
-
-# ===============================
-# LOAD MODEL
-# ===============================
+    joblib.dump(model, f"{ticker}_model.pkl")
+    joblib.dump(scaler, f"{ticker}_scaler.pkl")
 
 def load_model(ticker):
     try:
         model = joblib.load(f"{ticker}_model.pkl")
         scaler = joblib.load(f"{ticker}_scaler.pkl")
         return model, scaler
-    except Exception:
+    except:
         return None, None
 
-# ===============================
-# FORECAST
-# ===============================
-
+# -----------------------------------------------------------
+# Forecast Future Prices
+# -----------------------------------------------------------
 def forecast(model, scaler, steps=30):
     try:
         pred_scaled = model.forecast(steps=steps)
-        pred = inverse_scale(pred_scaled, scaler)
+        pred = inverse_scale(pred_scaled.reshape(-1, 1), scaler).flatten()
         return pred
-    except Exception:
-        return np.array([])
+    except:
+        return []
