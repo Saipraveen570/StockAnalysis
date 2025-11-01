@@ -1,196 +1,37 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import datetime
-import time
-from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD
+import datetime as dt
+from sklearn.linear_model import LinearRegression
+from utils.plotly_figure import candlestick, RSI, Moving_average, MACD
 
-st.set_page_config(page_title="Stock Analysis", page_icon="📈", layout="wide")
-st.title("Stock Analysis")
+st.title("🤖 Stock Price Prediction")
 
-# ============================
-# Safe fetch functions
-# ============================
-@st.cache_data(ttl=300)
-def safe_get_info(ticker):
-    stock = yf.Ticker(ticker)
-    info = {}
+ticker = st.text_input("Enter Stock Symbol (e.g. AAPL, TSLA, INFY.NS)", "AAPL")
+start_date = st.date_input("Start Date", dt.date(2024, 1, 1))
+end_date = st.date_input("End Date", dt.date.today())
 
-    try:
-        fi = stock.fast_info
-        info.update({
-            "longName": fi.get("companyName", ticker),
-            "marketCap": fi.get("marketCap"),
-            "trailingPE": fi.get("trailingPE"),
-            "beta": fi.get("beta"),
-            "currency": fi.get("currency")
-        })
-    except Exception:
-        pass
-
-    for delay in [1, 2, 4]:
-        try:
-            more = stock.get_info()
-            info.update(more)
-            return info
-        except Exception:
-            time.sleep(delay)
-
-    return info
-
-
-@st.cache_data(ttl=300)
-def safe_download(ticker, start, end):
-    for delay in [0, 2, 5]:
-        try:
-            data = yf.download(
-                ticker,
-                start=start,
-                end=end,
-                progress=False,
-                auto_adjust=True,
-                threads=False,
-            )
-            if data is not None and not data.empty:
-                return data
-        except Exception:
-            time.sleep(delay)
-
-    return pd.DataFrame()
-
-
-@st.cache_data(ttl=300)
-def safe_history(ticker):
-    stock = yf.Ticker(ticker)
-
-    for delay in [0, 2, 5]:
-        try:
-            data = stock.history(period="max", auto_adjust=True)
-            if data is not None and not data.empty:
-                return data
-        except Exception:
-            time.sleep(delay)
-
-    return pd.DataFrame()
-
-
-# ============================
-# UI inputs
-# ============================
-today = datetime.date.today()
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    ticker = st.text_input("Stock Ticker", "AAPL").upper()
-with col2:
-    start_date = st.date_input("Start Date", datetime.date(today.year-1, today.month, today.day))
-with col3:
-    end_date = st.date_input("End Date", today)
-
-# ============================
-# Company Info
-# ============================
-info = safe_get_info(ticker)
-
-if not info:
-    st.warning("""
-Yahoo Finance data delayed/blocked.
-Try again later or ensure correct ticker (e.g., RELIANCE.NS for Indian stocks).
-""")
-else:
-    st.subheader(info.get("longName", ticker))
-    st.write(info.get("longBusinessSummary", "Summary unavailable."))
-
-    stats1 = pd.DataFrame({
-        "": ["Market Cap", "Beta", "EPS", "PE Ratio"],
-        "Value": [
-            info.get("marketCap", "N/A"),
-            info.get("beta", "N/A"),
-            info.get("trailingEps", "N/A"),
-            info.get("trailingPE", "N/A"),
-        ],
-    }).set_index("")
-
-    stats2 = pd.DataFrame({
-        "": ["Quick Ratio", "Revenue/Share", "Profit Margin", "Debt/Equity", "ROE"],
-        "Value": [
-            info.get("quickRatio", "N/A"),
-            info.get("revenuePerShare", "N/A"),
-            info.get("profitMargins", "N/A"),
-            info.get("debtToEquity", "N/A"),
-            info.get("returnOnEquity", "N/A"),
-        ],
-    }).set_index("")
-
-    colA, colB = st.columns(2)
-    colA.plotly_chart(plotly_table(stats1), use_container_width=True)
-    colB.plotly_chart(plotly_table(stats2), use_container_width=True)
-
-# ============================
-# Price Data
-# ============================
-data = safe_download(ticker, start_date, end_date)
+data = yf.download(ticker, start=start_date, end=end_date)
 
 if data.empty:
-    st.error("""
-❌ Could not retrieve price data.
-• Check ticker format (example: RELIANCE.NS for NSE)
-• Yahoo Finance might be rate-limiting
-• Try again shortly
-""")
+    st.error("No data fetched. Try a valid symbol.")
     st.stop()
 
-colA, colB, colC = st.columns(3)
-if len(data) > 1:
-    daily_change = data["Close"].iloc[-1] - data["Close"].iloc[-2]
-    colA.metric("Daily Close", round(data["Close"].iloc[-1], 2), round(daily_change, 2))
+st.plotly_chart(candlestick(data))
+st.plotly_chart(RSI(data))
+st.plotly_chart(Moving_average(data))
+st.plotly_chart(MACD(data))
 
-data.index = [str(i)[:10] for i in data.index]
-fig_tail = plotly_table(data.tail(10).sort_index(ascending=False).round(3))
-fig_tail.update_layout(height=220)
+# Prediction
+data["Days"] = (data.index - data.index[0]).days
+X = data[["Days"]]
+y = data["Close"]
+model = LinearRegression()
+model.fit(X, y)
 
-st.write("##### Historical Data (Last 10 days)")
-st.plotly_chart(fig_tail, use_container_width=True)
+future_days = 30
+future = pd.DataFrame({"Days": range(data["Days"].max() + 1, data["Days"].max() + 1 + future_days)})
+future["Predicted_Price"] = model.predict(future)
 
-st.markdown("""<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" />""", unsafe_allow_html=True)
-
-# ============================
-# Interactive charts
-# ============================
-period_buttons = ["5d","1mo","6mo","ytd","1y","5y","max"]
-labels = ["5D","1M","6M","YTD","1Y","5Y","MAX"]
-period = ""
-
-cols = st.columns(len(labels))
-for c, p, l in zip(cols, period_buttons, labels):
-    if c.button(l):
-        period = p
-
-col1, col2, _ = st.columns([1,1,4])
-chart_type = col1.selectbox("", ["Candle", "Line"])
-indicators = col2.selectbox("", ["RSI","Moving Average","MACD"] if chart_type=="Line" else ["RSI","MACD"])
-
-hist = safe_history(ticker)
-
-if hist.empty:
-    st.error("Unable to load full historical data due to Yahoo Finance limits.")
-    st.stop()
-
-plot_period = period if period else "1y"
-
-if chart_type == "Candle":
-    st.plotly_chart(candlestick(hist, plot_period), use_container_width=True)
-    if indicators == "RSI":
-        st.plotly_chart(RSI(hist, plot_period), use_container_width=True)
-    if indicators == "MACD":
-        st.plotly_chart(MACD(hist, plot_period), use_container_width=True)
-
-else:
-    if indicators == "Moving Average":
-        st.plotly_chart(Moving_average(hist, plot_period), use_container_width=True)
-    else:
-        st.plotly_chart(close_chart(hist, plot_period), use_container_width=True)
-        if indicators == "RSI":
-            st.plotly_chart(RSI(hist, plot_period), use_container_width=True)
-        if indicators == "MACD":
-            st.plotly_chart(MACD(hist, plot_period), use_container_width=True)
+st.subheader("📅 30-Day Linear Regression Forecast")
+st.line_chart(future.set_index("Days")["Predicted_Price"])
