@@ -121,7 +121,7 @@ fig_macd.update_layout(template="plotly_white", yaxis_title="MACD")
 st.plotly_chart(fig_macd, use_container_width=True)
 
 # ------------------- SNAPSHOT -------------------
-st.markdown("### 📈 Latest Data Snapshot")
+st.markdown("### Latest Data Snapshot")
 latest = data.tail(1).T
 latest.columns = ["Latest"]
 st.dataframe(latest.round(3), use_container_width=True)
