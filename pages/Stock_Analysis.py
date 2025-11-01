@@ -7,7 +7,7 @@ import yfinance as yf
 from alpha_vantage.timeseries import TimeSeries
 
 # ------------------- PAGE CONFIG -------------------
-st.set_page_config(page_title="📈 Stock Analysis", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Stock Analysis", page_icon="📊", layout="wide")
 st.title("Stock Market Analysis Dashboard")
 
 # ------------------- CONFIG -------------------
