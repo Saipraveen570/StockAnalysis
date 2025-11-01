@@ -1,138 +1,129 @@
 import streamlit as st
-import pandas as pd 
-import yfinance as yf 
+import pandas as pd
+import yfinance as yf
 import datetime
 from pages.utils.plotly_figure import plotly_table, close_chart, candlestick, RSI, Moving_average, MACD
 
-# setting page config
-st.set_page_config(
-        page_title="Stock Analysis",
-        page_icon="page_with_curl",
-        layout="wide",
-)
-
+st.set_page_config(page_title="Stock Analysis", page_icon="📈", layout="wide")
 st.title("Stock Analysis")
+
+@st.cache_data(ttl=300)
+def safe_get_info(ticker):
+    try:
+        return yf.Ticker(ticker).get_info()
+    except Exception:
+        return {}
+
+@st.cache_data(ttl=300)
+def safe_download(ticker, start, end):
+    try:
+        data = yf.download(ticker, start=start, end=end)
+        if data is None or len(data) == 0:
+            return pd.DataFrame()
+        return data
+    except:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=300)
+def safe_history(ticker):
+    try:
+        return yf.Ticker(ticker).history(period="max")
+    except:
+        return pd.DataFrame()
 
 col1, col2, col3 = st.columns(3)
 today = datetime.date.today()
 
 with col1:
-    ticker = st.text_input('Stock Ticker', 'AAPL')
+    ticker = st.text_input("Stock Ticker", "AAPL").upper()
 with col2:
     start_date = st.date_input("Start Date", datetime.date(today.year-1, today.month, today.day))
 with col3:
-    end_date = st.date_input("End Date", datetime.date(today.year, today.month, today.day))
+    end_date = st.date_input("End Date", today)
 
-st.subheader(ticker)
+info = safe_get_info(ticker)
 
-# Fetch stock info safely
-stock = yf.Ticker(ticker)
-try:
-    info = stock.get_info()
-except Exception:
-    info = {}
+if not info:
+    st.warning("Unable to fetch company info. Yahoo Finance may be rate-limiting. Try again later.")
+else:
+    st.subheader(info.get("longName", ticker))
+    st.write(info.get("longBusinessSummary", "Description not available"))
 
-st.write(info.get('longBusinessSummary', 'Summary not available'))
-st.write("**Sector:**", info.get('sector', 'N/A'))
-st.write("**Full Time Employees:**", info.get('fullTimeEmployees', 'N/A'))
-st.write("**Website:**", info.get('website', 'N/A'))
+    stats1 = pd.DataFrame({
+        "": ["Market Cap", "Beta", "EPS", "PE Ratio"],
+        "Value": [
+            info.get("marketCap", "N/A"),
+            info.get("beta", "N/A"),
+            info.get("trailingEps", "N/A"),
+            info.get("trailingPE", "N/A"),
+        ],
+    }).set_index("")
+    
+    stats2 = pd.DataFrame({
+        "": ["Quick Ratio", "Revenue/Share", "Profit Margin", "Debt/Equity", "ROE"],
+        "Value": [
+            info.get("quickRatio", "N/A"),
+            info.get("revenuePerShare", "N/A"),
+            info.get("profitMargins", "N/A"),
+            info.get("debtToEquity", "N/A"),
+            info.get("returnOnEquity", "N/A"),
+        ],
+    }).set_index("")
 
-# Display metrics table safely
-col1, col2 = st.columns(2)
-with col1:
-    df = pd.DataFrame(index=['Market Cap', 'Beta', 'EPS', 'PE Ratio'])
-    df[''] = [
-        info.get("marketCap", "N/A"),
-        info.get("beta", "N/A"),
-        info.get("trailingEps", "N/A"),
-        info.get("trailingPE", "N/A")
-    ]
-    fig_df = plotly_table(df)
-    st.plotly_chart(fig_df, use_container_width=True)
+    col1, col2 = st.columns(2)
+    col1.plotly_chart(plotly_table(stats1), use_container_width=True)
+    col2.plotly_chart(plotly_table(stats2), use_container_width=True)
 
-with col2:
-    df = pd.DataFrame(index=['Qucik Ratio', 'Revenue per share', 'Profit Margins', 'Debt to Equity', 'Return on Equity'])
-    df[''] = [
-        info.get("quickRatio", "N/A"),
-        info.get("revenuePerShare", "N/A"),
-        info.get("profitMargins", "N/A"),
-        info.get("debtToEquity", "N/A"),
-        info.get("returnOnEquity", "N/A")
-    ]
-    fig_df = plotly_table(df)
-    st.plotly_chart(fig_df, use_container_width=True)
+data = safe_download(ticker, start_date, end_date)
 
-# Fetch price data safely
-try:
-    data = yf.download(ticker, start=start_date, end=end_date)
-except Exception:
-    st.error("Unable to fetch price data. Try a different ticker.")
+if data.empty:
+    st.error("Invalid ticker or data currently unavailable. Try again later.")
     st.stop()
 
-if len(data) < 1:
-    st.write('##### Please write the name of valid Ticker')
+colA, colB, colC = st.columns(3)
+daily_change = data["Close"].iloc[-1] - data["Close"].iloc[-2]
+colA.metric("Daily Close", round(data["Close"].iloc[-1], 2), round(daily_change, 2))
+
+data.index = [str(i)[:10] for i in data.index]
+fig_tail = plotly_table(data.tail(10).sort_index(ascending=False).round(3))
+fig_tail.update_layout(height=220)
+st.write("##### Historical Data (Last 10 days)")
+st.plotly_chart(fig_tail, use_container_width=True)
+
+st.markdown("""<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" />""", unsafe_allow_html=True)
+
+period_buttons = ["5d","1mo","6mo","ytd","1y","5y","max"]
+labels = ["5D","1M","6M","YTD","1Y","5Y","MAX"]
+period = ""
+
+cols = st.columns(len(labels))
+for c, p, l in zip(cols, period_buttons, labels):
+    if c.button(l): period = p
+
+col1, col2, _ = st.columns([1,1,4])
+chart_type = col1.selectbox("", ["Candle", "Line"])
+indicators = col2.selectbox("", ["RSI","Moving Average","MACD"] if chart_type=="Line" else ["RSI","MACD"])
+
+hist = safe_history(ticker)
+if hist.empty:
+    st.error("Unable to load price history. Yahoo Finance may be rate limiting.")
+    st.stop()
+
+plot_period = period if period else "1y"
+
+if chart_type == "Candle":
+    st.plotly_chart(candlestick(hist, plot_period), use_container_width=True)
+    if indicators == "RSI":
+        st.plotly_chart(RSI(hist, plot_period), use_container_width=True)
+    if indicators == "MACD":
+        st.plotly_chart(MACD(hist, plot_period), use_container_width=True)
+
 else:
-    col1, col2, col3 = st.columns(3)
-    daily_change = data['Close'].iloc[-1] - data['Close'].iloc[-2]
-    col1.metric("Daily Close", round(data['Close'].iloc[-1], 2), round(daily_change, 2))
-
-    data.index = [str(i)[:10] for i in data.index]
-    fig_tail = plotly_table(data.tail(10).sort_index(ascending=False).round(3))
-    fig_tail.update_layout(height=220)
-    st.write('##### Historical Data (Last 10 days)')
-    st.plotly_chart(fig_tail, use_container_width=True)
-
-    st.markdown("""<hr style="height:2px;border:none;color:#0078ff;background-color:#0078ff;" /> """, unsafe_allow_html=True)
-
-    # Buttons
-    st.markdown("""
-        <style>
-        div.stButton > button:first-child {
-            background-color: #e1efff;
-            color:black;
-        }
-        div.stButton > button:hover {
-            background-color: #0078ff;
-            color:white;
-        }
-        </style>""", unsafe_allow_html=True)
-
-    col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11, col12 = st.columns([1]*12)
-
-    num_period = ''
-    if col1.button('5D'): num_period = '5d'
-    if col2.button('1M'): num_period = '1mo'
-    if col3.button('6M'): num_period = '6mo'
-    if col4.button('YTD'): num_period = 'ytd'
-    if col5.button('1Y'): num_period = '1y'
-    if col6.button('5Y'): num_period = '5y'
-    if col7.button('MAX'): num_period = 'max'
-
-    col1, col2, col3 = st.columns([1,1,4])
-    with col1:
-        chart_type = st.selectbox('',('Candle','Line'))
-    with col2:
-        indicators = st.selectbox('',('RSI','MACD','Moving Average') if chart_type=="Line" else ('RSI','MACD'))
-
-    ticker_ = yf.Ticker(ticker)
-    data1 = ticker_.history(period='max')
-
-    if num_period:
-        df_plot = data1
-        period = num_period
+    if indicators == "Moving Average":
+        st.plotly_chart(Moving_average(hist, plot_period), use_container_width=True)
     else:
-        df_plot = data1
-        period = '1y'
-
-    if chart_type == 'Candle':
-        st.plotly_chart(candlestick(df_plot, period), use_container_width=True)
-        if indicators == 'RSI': st.plotly_chart(RSI(df_plot, period), use_container_width=True)
-        if indicators == 'MACD': st.plotly_chart(MACD(df_plot, period), use_container_width=True)
-
-    else:
-        if indicators == 'Moving Average':
-            st.plotly_chart(Moving_average(df_plot, period), use_container_width=True)
-        else:
-            st.plotly_chart(close_chart(df_plot, period), use_container_width=True)
-            if indicators == 'RSI': st.plotly_chart(RSI(df_plot, period), use_container_width=True)
-            if indicators == 'MACD': st.plotly_chart(MACD(df_plot, period), use_container_width=True)
+        st.plotly_chart(close_chart(hist, plot_period), use_container_width=True)
+        if indicators == "RSI":
+            st.plotly_chart(RSI(hist, plot_period), use_container_width=True)
+        if indicators == "MACD":
+            st.plotly_chart(MACD(hist, plot_period), use_container_width=True)
