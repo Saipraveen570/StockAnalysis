@@ -134,7 +134,7 @@ if data.empty:
 st.success(f"✅ Data fetched successfully for {ticker} ({data.index.date.min()} to {data.index.date.max()})")
 
 # ------------------- VISUALIZATIONS -------------------
-st.subheader("📊 Technical Analysis Charts")
+st.subheader("Technical Analysis Charts")
 try:
     st.plotly_chart(candlestick(data), use_container_width=True)
     st.plotly_chart(RSI(data), use_container_width=True)
